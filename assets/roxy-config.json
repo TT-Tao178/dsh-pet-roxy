@@ -1,0 +1,61 @@
+{
+  "expressions": {
+    "default": "roxy1.png",
+    "happy": "roxy2.png",
+    "surprised": "roxy3.png",
+    "sleepy": "roxy4.png",
+    "angry": "roxy2.png"
+  },
+  "reactions": {
+    "turnCost": [
+      { "min": 5, "expr": "angry" },
+      { "min": 1, "expr": "surprised" },
+      { "min": 0.01, "expr": "happy" },
+      { "min": 0, "expr": "sleepy" }
+    ],
+    "balanceLow": { "threshold": 10, "line": "余额不多啦，省着点用~" }
+  },
+  "prefs": {
+    "scale": 1.0,
+    "corner": "bottom-right",
+    "marginX": 16,
+    "marginY": 16,
+    "mirrorOnLeft": false,
+    "animationOn": true,
+    "linesOn": true,
+    "turnCostOn": true,
+    "turnCostCloseMs": 5000
+  },
+  "behavior": {
+    "breatheMs": 2400,
+    "flickEverySec": [10, 20],
+    "flickChance": 0.05,
+    "flickMs": 1200,
+    "sleepyEverySec": [25, 35],
+    "sleepyChance": 0.3,
+    "sleepyMs": 5000,
+    "refreshMs": 60000,
+    "bubbleMs": 5000,
+    "taskPollMs": 1000
+  },
+  "speech": {
+    "toggles": {
+      "randomLines": true,
+      "turnCost": true,
+      "balanceLow": true
+    },
+    "customLines": []
+  },
+  "lines": [
+    { "group": "peak", "weight": 20, "template": true },
+    { "group": "tsundere", "weight": 12, "items": ["哼，才不是特意在等你的余额呢", "笨蛋…余额掉了可别怪我", "才、才没有在担心你写不写得完呢"] },
+    { "group": "care", "weight": 10, "items": ["今天也要好好写代码哦", "记得休息，魔法也要省着用", "进展顺利吗？我一直在看着呢"] },
+    { "group": "tease", "weight": 8, "items": ["又是你，这次要花多少钱呀", "DeepSeek 也要吃饭的嘛", "token 烧得这么快，我会心疼的"] },
+    { "group": "sleepy", "weight": 5, "items": ["zzz… 余额你自己看着办", "好困… 下次再说", "呼… 反正你会记得看余额的吧"] }
+  ],
+  "reportLines": {
+    "taskDone": "完成啦！%title% 搞定~",
+    "taskFailed": "%title% 失败了…要不要看看日志？",
+    "taskAdded": "记下了：%title%"
+  }
+}
