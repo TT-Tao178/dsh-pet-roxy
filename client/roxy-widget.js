@@ -6,6 +6,14 @@
 //   ④ 行为状态机          ⑤ 定位与吸附        ⑥ 数据轮询
 //   ⑦ 右键菜单 + 设置面板  ⑧ 统计 Dashboard    ⑨ 气泡与台词
 //
+// ============================================================================
+// 行为 → 表情键 → 图片 → 触发方式（映射来自 /config 的 expressions）
+//   default 默认     roxy0.png  开机/待机
+//   happy   行为一   roxy1.png  单击（与行为二随机二选一）；任务完成；每轮消耗 <5 元
+//   surprised 行为二 roxy2.png  单击（与行为一随机二选一）；任务失败；每轮消耗 ≥5 元
+//   sleepy  行为三   roxy3.png  任务进行中 80% 概率出现，平时 20% 概率出现（工作态）
+//   angry   行为四   roxy4.png  双击；随机犯困（25~35 秒，30% 概率；任务进行中不犯困）
+// ============================================================================
 // 设计说明见项目 README.md
 // ============================================================================
 (function () {
@@ -35,13 +43,13 @@
   try { reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch (e) {}
 
   var FALLBACK = {
-    expressions: { default: 'roxy1.png', happy: 'roxy2.png', surprised: 'roxy3.png', sleepy: 'roxy4.png', angry: 'roxy2.png' },
-    reactions: { turnCost: [{ min: 5, expr: 'angry' }, { min: 1, expr: 'surprised' }, { min: 0.01, expr: 'happy' }, { min: 0, expr: 'sleepy' }], balanceLow: { threshold: 10, line: '余额不多啦，省着点用~' } },
+    expressions: { default: 'roxy0.png', happy: 'roxy1.png', surprised: 'roxy2.png', sleepy: 'roxy3.png', angry: 'roxy4.png' },
+    reactions: { turnCost: [{ min: 5, expr: 'surprised' }, { min: 0.01, expr: 'happy' }, { min: 0, expr: 'angry' }], balanceLow: { threshold: 10, line: '余额不多了。……自己看着办。' } },
     prefs: { scale: 1.0, corner: 'bottom-right', marginX: 16, marginY: 16, mirrorOnLeft: false, animationOn: true, linesOn: true, turnCostOn: true, turnCostCloseMs: 5000 },
-    behavior: { breatheMs: 2400, flickEverySec: [10, 20], flickChance: 0.05, flickMs: 1200, sleepyEverySec: [25, 35], sleepyChance: 0.3, sleepyMs: 5000, refreshMs: 60000, bubbleMs: 5000, taskPollMs: 1000 },
+    behavior: { breatheMs: 2400, flickEverySec: [10, 20], flickChance: 0.2, flickMs: 1200, sleepyEverySec: [25, 35], sleepyChance: 0.3, sleepyMs: 5000, refreshMs: 60000, bubbleMs: 5000, taskPollMs: 1000 },
     speech: { toggles: { randomLines: true, turnCost: true, balanceLow: true }, customLines: [] },
     lines: [],
-    reportLines: { taskDone: '完成啦！%title% 搞定~', taskFailed: '%title% 失败了…要不要看看日志？', taskAdded: '记下了：%title%' },
+    reportLines: { taskDone: '……%title%，做完了。', taskFailed: '%title%……失败了。自己看日志。', taskAdded: '记下了：%title%。' },
   }
 
   function esc(s) {
@@ -130,6 +138,7 @@
     taskMap: {}, // id -> status（上次看到的状态）
     selfTaskId: null,
     selfTaskAt: 0,
+    taskWorking: false, // 是否有任务处于 doing（决定行为三出现概率 80% / 20%）
   }
 
   // -------------------------------------------------------------------------
@@ -322,7 +331,7 @@
   // -------------------------------------------------------------------------
   function resolveImgUrl(expr) {
     var v = state.expressions && state.expressions[expr]
-    if (!v) v = FALLBACK.expressions[expr] || 'roxy1.png'
+    if (!v) v = FALLBACK.expressions[expr] || 'roxy0.png'
     var src
     if (v.indexOf('user-image/') === 0) {
       src = API.userImage + '?name=' + encodeURIComponent(v.slice('user-image/'.length))
@@ -342,13 +351,13 @@
       imgEl.style.opacity = '0'
       setTimeout(function () {
         imgEl.src = newSrc
-        imgEl.onerror = function () { imgEl.onerror = null; imgEl.src = API.image + 'roxy1.png' }
+        imgEl.onerror = function () { imgEl.onerror = null; imgEl.src = API.image + 'roxy0.png' }
         imgEl.style.transition = 'opacity .2s ease'
         imgEl.style.opacity = '1'
       }, 150)
     } else {
       imgEl.src = newSrc
-      imgEl.onerror = function () { imgEl.onerror = null; imgEl.src = API.image + 'roxy1.png' }
+      imgEl.onerror = function () { imgEl.onerror = null; imgEl.src = API.image + 'roxy0.png' }
     }
     state.expr = expr
     if (holdMs) {
@@ -367,15 +376,16 @@
     scheduleSleepy()
   }
 
+  // 行为三（working 工作态）：任务进行中时 80% 概率短暂出现，平时 20% 概率出现
   function scheduleFlick() {
     if (state.flickTimer) clearTimeout(state.flickTimer)
     var bh = state.behavior || FALLBACK.behavior
     var sec = randInt((bh.flickEverySec && bh.flickEverySec[0]) || 10, (bh.flickEverySec && bh.flickEverySec[1]) || 20)
     state.flickTimer = setTimeout(function () {
       state.flickTimer = null
-      if (!state.costBubbleActive && state.expr === 'default' && Math.random() < (Number(bh.flickChance) || 0.05)) {
-        var pool = EXPR_KEYS.filter(function (k) { return k !== 'default' })
-        setExpression(pool[randInt(0, pool.length - 1)], Number(bh.flickMs) || 1200)
+      if (!state.costBubbleActive && state.expr === 'default') {
+        var chance = state.taskWorking ? 0.8 : (Number(bh.flickChance) || 0.2)
+        if (Math.random() < chance) setExpression('sleepy', Number(bh.flickMs) || 1200)
       }
       scheduleFlick()
     }, sec * 1000)
@@ -387,15 +397,17 @@
     var sec = randInt((bh.sleepyEverySec && bh.sleepyEverySec[0]) || 25, (bh.sleepyEverySec && bh.sleepyEverySec[1]) || 35)
     state.sleepyTimer = setTimeout(function () {
       state.sleepyTimer = null
-      if (!state.costBubbleActive && state.expr === 'default' && Math.random() < (Number(bh.sleepyChance) || 0.3)) {
+      // 任务进行中不犯困（行为三 working 优先）；行为四 = 犯困
+      if (!state.costBubbleActive && state.expr === 'default' && !state.taskWorking && Math.random() < (Number(bh.sleepyChance) || 0.3)) {
         enterSleepy(Number(bh.sleepyMs) || 5000)
       }
       scheduleSleepy()
     }, sec * 1000)
   }
 
+  // 行为四 = 犯困状态
   function enterSleepy(ms) {
-    setExpression('sleepy', ms)
+    setExpression('angry', ms)
   }
 
   function stopAllBehavior() {
@@ -574,13 +586,16 @@
   }
 
   function handleSingleClick() {
-    setExpression('happy', 2000)
+    // 行为一 / 行为二：点击时随机出现一个
+    var pool = ['happy', 'surprised']
+    setExpression(pool[randInt(0, pool.length - 1)], 2000)
     showBalanceBubble(true)
   }
 
   function handleDoubleClick() {
+    // 行为四 = 犯困
     setExpression('angry', 1500)
-    showBubbleText([{ t: '哼！', s: 'B' }], 1500)
+    showBubbleText([{ t: '……别戳了，我要睡了。', s: 'A', w: true }], 1500)
   }
 
   function onDocKeydown(e) {
@@ -691,6 +706,8 @@
       var ids = {}
       for (var j = 0; j < data.tasks.length; j++) ids[data.tasks[j].id] = true
       for (var k in state.taskMap) { if (!ids[k]) delete state.taskMap[k] }
+      // 是否有任务处于进行中（驱动行为三的 80% 出现概率）
+      state.taskWorking = data.tasks.some(function (t) { return t.status === 'doing' })
     })
   }
 
@@ -992,6 +1009,7 @@
         '<div class="rx-slot-name">' + EXPR_LABELS[key] + '</div>' +
         '<div class="rx-slot-src">' + (isUser ? '自定义' : '默认') + '</div>' +
         '<button type="button" class="rx-btn" style="width:100%;margin-bottom:4px" data-upload-slot="' + key + '">上传</button>' +
+        '<button type="button" class="rx-btn" style="width:100%;margin-bottom:4px" data-preview-slot="' + key + '">预览</button>' +
         (isUser ? '<button type="button" class="rx-btn" style="width:100%" data-del-slot="' + key + '" data-name="' + esc(v.slice('user-image/'.length)) + '">恢复默认</button>' : '') +
         '</div>'
     }
@@ -1057,6 +1075,16 @@
       for (var k = 0; k < delBtns2.length; k++) {
         delBtns2[k].addEventListener('click', function () {
           deleteUserImage(this.getAttribute('data-name'))
+        })
+      }
+      // 预览：关掉面板，宠物切换到该表情 3 秒，方便查看每张图的实际效果
+      var previewBtns = body.querySelectorAll('[data-preview-slot]')
+      for (var m = 0; m < previewBtns.length; m++) {
+        previewBtns[m].addEventListener('click', function () {
+          var slot = this.getAttribute('data-preview-slot')
+          closeSettings()
+          setExpression(slot, 3000)
+          toast('预览「' + (EXPR_LABELS[slot] || slot) + '」')
         })
       }
       body.querySelector('#rx-restore-all-images').addEventListener('click', restoreAllImages)

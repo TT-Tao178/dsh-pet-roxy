@@ -88,7 +88,7 @@ check('inject = [webServer, credentials]', JSON.stringify(inject) === JSON.strin
 console.log('== 配置 ==')
 const cfgRes = await call('GET', '/dsh-pet-roxy/config')
 check('GET /config ok', cfgRes.json().ok === true)
-check('config 含 expressions', !!cfgRes.json().config && !!cfgRes.json().config.expressions && cfgRes.json().config.expressions.happy === 'roxy2.png')
+check('config 含 expressions', !!cfgRes.json().config && !!cfgRes.json().config.expressions && cfgRes.json().config.expressions.happy === 'roxy1.png')
 check('config 含 prefs.scale=1.0', cfgRes.json().config.prefs.scale === 1.0)
 check('config 含台词组', Array.isArray(cfgRes.json().config.lines) && cfgRes.json().config.lines.length >= 4)
 
@@ -135,7 +135,7 @@ check('路径穿越被拒 404', u7.status === 404)
 const u8 = await call('DELETE', '/dsh-pet-roxy/user-image?name=' + encodeURIComponent(upName))
 check('DELETE 删除用户图', u8.json().ok === true)
 const u9 = await call('GET', '/dsh-pet-roxy/config')
-check('删除后回落默认图', u9.json().config.expressions.happy === 'roxy2.png')
+check('删除后回落默认图', u9.json().config.expressions.happy === 'roxy1.png')
 
 console.log('== 预置偏好 ==')
 const p1 = await call('PUT', '/dsh-pet-roxy/prefs', JSON.stringify({ prefs: { scale: 1.4, turnCostCloseMs: 8000 } }))
@@ -161,9 +161,9 @@ emit('turn/end', {})
 const l1 = await call('GET', '/dsh-pet-roxy/last-turn.json')
 const lj = l1.json()
 check('last-turn seq=1', lj.ok === true && lj.seq === 1, lj)
-// 谷价：输入 1.5/1e6 *1e6 = 1.5；输出 4.5/1e6*0.5e6 = 2.25；合计 3.75 → surprised（1~5）
+// 谷价：输入 1.5/1e6 *1e6 = 1.5；输出 4.5/1e6*0.5e6 = 2.25；合计 3.75 → happy（0.01~5，新规则：≥5 才 surprised）
 check('消耗金额≈3.75', Math.abs(lj.amount - 3.75) < 0.01, lj.amount)
-check('reaction=surprised', lj.reaction === 'surprised', lj.reaction)
+check('reaction=happy', lj.reaction === 'happy', lj.reaction)
 
 console.log('== tapIndex 注入 ==')
 const html = tapFns[0]('<html><head></head><body><div>page</div></body></html>')
