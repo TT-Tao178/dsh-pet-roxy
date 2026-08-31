@@ -51,7 +51,7 @@ DSH（DeepSeek Harness）Web 界面里的桌面宠物挂件。角色是《无职
 ### 方式一：从 GitHub 直接装
 
 ```powershell
-dsh plugin --profile web add github:<你的GitHub用户名>/dsh-pet-roxy
+dsh plugin --profile web add github:TT-Tao178/dsh-pet-roxy
 ```
 
 装完重启 `dsh web`，浏览器刷新即可。
@@ -59,7 +59,7 @@ dsh plugin --profile web add github:<你的GitHub用户名>/dsh-pet-roxy
 ### 方式二：本地安装
 
 ```powershell
-git clone https://github.com/<你的GitHub用户名>/dsh-pet-roxy.git
+git clone https://github.com/TT-Tao178/dsh-pet-roxy.git
 cd dsh-pet-roxy
 dsh plugin --profile web add link:.
 ```
