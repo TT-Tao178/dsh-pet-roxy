@@ -25,7 +25,7 @@
     image: '/dsh-pet-roxy/image?name=',
   }
   var EXPR_KEYS = ['default', 'happy', 'surprised', 'sleepy', 'angry']
-  var EXPR_LABELS = { default: '默认', happy: '开心', surprised: '震惊', sleepy: '犯困', angry: '生气' }
+  var EXPR_LABELS = { default: '默认', happy: '行为一', surprised: '行为二', sleepy: '行为三', angry: '行为四' }
   var MIN_SCALE = 0.6
   var MAX_SCALE = 2.5
   var CLICK_SQ = 25 // 单击阈值（位移平方 < 25 即 <5px）
@@ -105,11 +105,13 @@
     behavior: {},
     expressions: {},
     balance: null,
+    balanceError: null,
     lastSeq: 0,
     expr: 'default',
     exprTimer: null,
     costBubbleActive: false,
     costCloseTimer: null,
+    bubbleMode: 'none', // 'none' | 'balance' | 'line' | 'cost' | 'plain'
     dragging: false,
     press: false,
     snapH: 'right', // 'left' | 'right' | 'free'
@@ -120,7 +122,6 @@
     viewH: 0,
     sizeKey: null,
     bubbleTimer: null,
-    zzzTimer: null,
     flickTimer: null,
     sleepyTimer: null,
     menuOpen: false,
@@ -146,13 +147,6 @@
     '.rx-root.rx-mirror .rx-img{transform:scaleX(-1)}',
     '.rx-root.rx-mirror.rx-anim .rx-img{animation-name:rx-breathe-mirror}',
     '@keyframes rx-breathe-mirror{0%,100%{transform:scaleX(-1) scaleY(1)}50%{transform:scaleX(-1) scaleY(1.03)}}',
-    '.rx-zzz{position:absolute;right:8%;top:calc(var(--rx-base) * 0.64);display:none;pointer-events:none;z-index:2;font-weight:800;color:#203170;line-height:1}',
-    '.rx-zzz span{position:absolute;display:block;font-size:calc(var(--rx-u,1px) * 90);opacity:0}',
-    '.rx-zzz.rx-zzz-on{display:block}',
-    '.rx-zzz.rx-zzz-on span{animation:rx-z 1.6s ease-out infinite}',
-    '.rx-zzz.rx-zzz-on span:nth-child(2){animation-delay:.5s}',
-    '.rx-zzz.rx-zzz-on span:nth-child(3){animation-delay:1s}',
-    '@keyframes rx-z{0%{opacity:0;transform:translateY(0)}25%{opacity:.9}100%{opacity:0;transform:translateY(-40px)}}',
     '.rx-bubble{position:absolute;left:0;top:0;width:86%;aspect-ratio:1026/700;pointer-events:none;z-index:1;opacity:0;transition:opacity .2s ease;--rx-u:calc(var(--rx-base) / 1026)}',
     '.rx-bubble.rx-bubble-open{opacity:1}',
     '.rx-bubble svg{display:block;width:100%;height:100%;pointer-events:none}',
@@ -238,7 +232,6 @@
   var root = null
   var bodyEl = null
   var imgEl = null
-  var zzzEl = null
   var bubbleEl = null
   var textEl = null
   var menuBtn = null
@@ -264,11 +257,6 @@
     imgEl.alt = '洛琪希'
     imgEl.draggable = false
     bodyEl.appendChild(imgEl)
-
-    zzzEl = document.createElement('div')
-    zzzEl.className = 'rx-zzz'
-    zzzEl.innerHTML = '<span>Z</span><span>Z</span><span>Z</span>'
-    bodyEl.appendChild(zzzEl)
 
     bubbleEl = document.createElement('div')
     bubbleEl.className = 'rx-bubble'
@@ -408,18 +396,11 @@
 
   function enterSleepy(ms) {
     setExpression('sleepy', ms)
-    zzzEl.classList.add('rx-zzz-on')
-    state.zzzTimer = setTimeout(function () {
-      zzzEl.classList.remove('rx-zzz-on')
-      state.zzzTimer = null
-    }, ms)
   }
 
   function stopAllBehavior() {
     if (state.flickTimer) clearTimeout(state.flickTimer)
     if (state.sleepyTimer) clearTimeout(state.sleepyTimer)
-    if (state.zzzTimer) clearTimeout(state.zzzTimer)
-    zzzEl.classList.remove('rx-zzz-on')
   }
 
   function pressDown() {
@@ -616,22 +597,33 @@
   function refreshBalance(manual) {
     apiFetch(API.balance).then(function (data) {
       if (data && data.ok) {
+        state.balanceError = null
         var changed = state.balance && state.balance.totalBalance !== data.totalBalance
         state.balance = data
         if (manual) {
           showBalanceBubble(false)
         } else if (changed && !state.costBubbleActive && !bubbleOpen()) {
-          showBubble([{ t: '余额变化', s: 'C' }, { t: fmtMoney(data.totalBalance, data.currency), s: 'B' }], (state.behavior && state.behavior.bubbleMs) || 5000)
+          showBubble([{ t: '余额变化', s: 'C' }, { t: fmtMoney(data.totalBalance, data.currency), s: 'B' }], (state.behavior && state.behavior.bubbleMs) || 5000, 'balance')
         }
+        // 余额到达后，若气泡还停在"加载中/错误"占位，则刷新为真实内容
         renderBalanceHint()
-      } else if (data && data.code === 'NO_KEY') {
-        if (manual) showBubble([{ t: '未配置', s: 'C' }, { t: 'DEEPSEEK_API_KEY', s: 'A' }], 4000)
+      } else {
+        state.balanceError = (data && data.code === 'NO_KEY')
+          ? '未配置 DEEPSEEK_API_KEY，去 DSH 凭据里添加'
+          : '余额获取失败，稍后重试'
+        if (manual && !bubbleOpen()) {
+          showBubble([{ t: state.balanceError, s: 'C', w: true }], 4000, 'balance')
+        } else {
+          renderBalanceHint()
+        }
       }
     })
   }
 
   function renderBalanceHint() {
-    // 更新气泡内提示行（如果气泡开着）
+    // 只有"余额气泡"处于占位/旧内容时才更新，避免覆盖随机台词或消耗泡泡
+    if (!bubbleOpen() || state.bubbleMode !== 'balance') return
+    swapBubbleLines(bubbleLines())
   }
 
   function startIntervals() {
@@ -720,19 +712,20 @@
   function bubbleLines() {
     // 三行结构：label / amount / hint
     var bal = state.balance
+    if (!bal) {
+      // 余额还没加载到：占位（加载中/错误提示），不渲染空的时间段行
+      if (state.balanceError) return [{ t: state.balanceError, s: 'C', w: true }]
+      return [{ t: '加载中…', s: 'C' }]
+    }
     var hintText = ''
     var period = ''
-    if (bal) {
-      if (bal.isPeak) period = '高峰时段'
-      else period = '空闲时段'
-      hintText = '今日已用 ' + fmtMoney(bal.todayUsage, bal.currency)
-    } else {
-      hintText = '加载中…'
-    }
+    if (bal.isPeak) period = '高峰时段'
+    else period = '空闲时段'
+    hintText = '今日已用 ' + fmtMoney(bal.todayUsage, bal.currency)
     var low = false
     var lowCfg = (state.config && state.config.reactions && state.config.reactions.balanceLow) || FALLBACK.reactions.balanceLow
     var lowOn = !(state.speech && state.speech.toggles && state.speech.toggles.balanceLow === false)
-    if (lowOn && bal && bal.ok && typeof bal.totalBalance === 'number' && bal.totalBalance < (Number(lowCfg.threshold) || 10)) {
+    if (lowOn && bal.ok && typeof bal.totalBalance === 'number' && bal.totalBalance < (Number(lowCfg.threshold) || 10)) {
       low = true
       hintText = lowCfg.line || '余额不多啦，省着点用~'
     }
@@ -743,7 +736,8 @@
     ]
   }
 
-  function showBubble(lines, ms) {
+  function showBubble(lines, ms, mode) {
+    state.bubbleMode = mode || 'plain'
     clearBubbleTimer()
     textEl.innerHTML = ''
     for (var i = 0; i < lines.length; i++) {
@@ -771,6 +765,7 @@
       if (switchToLine) {
         var line = pickRandomLines()
         if (line) {
+          state.bubbleMode = 'line'
           swapBubbleLines(line)
           return
         }
@@ -778,8 +773,9 @@
       hideBubble()
       return
     }
+    // 先立刻显示（缓存内容或加载中占位），同时发起刷新；数据到达后 renderBalanceHint 更新内容
+    showBubble(bubbleLines(), (state.behavior && state.behavior.bubbleMs) || 5000, 'balance')
     refreshBalance(false)
-    showBubble(bubbleLines(), (state.behavior && state.behavior.bubbleMs) || 5000)
   }
 
   function swapBubbleLines(line) {
@@ -805,6 +801,7 @@
 
   function hideBubble() {
     bubbleEl.classList.remove('rx-bubble-open')
+    state.bubbleMode = 'none'
     clearBubbleTimer()
   }
 
@@ -813,7 +810,7 @@
   }
 
   function showCostBubble(amount) {
-    showBubble([{ t: '上一轮对话消耗:', s: 'A' }, { t: fmtMoney(amount, 'CNY'), s: 'B', c: '#ef4444' }], 0)
+    showBubble([{ t: '上一轮对话消耗:', s: 'A' }, { t: fmtMoney(amount, 'CNY'), s: 'B', c: '#ef4444' }], 0, 'cost')
   }
 
   function pickRandomLines() {
@@ -837,6 +834,7 @@
   function speakNow() {
     var line = pickRandomLines()
     if (line) {
+      state.bubbleMode = 'line'
       showBubbleText(line, (state.behavior && state.behavior.bubbleMs) || 5000)
     } else {
       showBubbleText([{ t: '……', s: 'B' }], 1500)
@@ -1136,8 +1134,10 @@
 
   // ---- 图片上传 ----
   var fileInput = null
+  var pendingUploadSlot = null // 每次点击上传时记录目标槽位（change 回调复用共享 input，必须读这个而非闭包旧值）
 
   function startUpload(slot) {
+    pendingUploadSlot = slot
     if (!fileInput) {
       fileInput = document.createElement('input')
       fileInput.type = 'file'
@@ -1155,11 +1155,12 @@
         var reader = new FileReader()
         reader.onload = function () {
           var dataUrl = String(reader.result || '')
+          // 正确解析 dataURL 的 mime（取 "data:" 后到第一个 ";" 之间的部分，避免带上 ";base64" 后缀）
+          var m = /^data:([^;,]+)/.exec(dataUrl)
+          var mime = m ? m[1] : 'image/png'
           var comma = dataUrl.indexOf(',')
-          var mime = 'image/png'
-          if (comma > 0) mime = dataUrl.slice(5, comma)
           var base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
-          uploadImage(slot, mime, base64)
+          uploadImage(pendingUploadSlot, mime, base64)
         }
         reader.onerror = function () { toast('读取文件失败') }
         reader.readAsDataURL(file)
