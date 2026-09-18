@@ -153,9 +153,7 @@
     '.rx-img{position:absolute;left:0;bottom:0;width:100%;height:var(--rx-base);object-fit:contain;object-position:center bottom;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none;transform-origin:50% 100%}',
     '.rx-root.rx-anim .rx-img{animation:rx-breathe var(--rx-breathe,2.4s) ease-in-out infinite}',
     '@keyframes rx-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.03)}}',
-    '.rx-root.rx-mirror .rx-img{transform:scaleX(-1)}',
-    '.rx-root.rx-mirror.rx-anim .rx-img{animation-name:rx-breathe-mirror}',
-    '@keyframes rx-breathe-mirror{0%,100%{transform:scaleX(-1) scaleY(1)}50%{transform:scaleX(-1) scaleY(1.03)}}',
+    // 镜像：root 整体 scaleX(-1) 翻转角色与气泡一次即可；图片不能再翻（二次翻转=抵消，曾致“左吸附镜像”看不出效果）
     '.rx-bubble{position:absolute;left:0;top:0;width:86%;aspect-ratio:1026/700;pointer-events:none;z-index:1;opacity:0;transition:opacity .2s ease;--rx-u:calc(var(--rx-base) / 1026)}',
     '.rx-bubble.rx-bubble-open{opacity:1}',
     '.rx-bubble svg{display:block;width:100%;height:100%;pointer-events:none}',
@@ -167,9 +165,6 @@
     '.rx-period{font-size:calc(var(--rx-u) * 104);font-weight:800;line-height:1.05}',
     '.rx-hint{font-size:calc(var(--rx-u) * 56);color:#9fb0d9;letter-spacing:.02em;margin-top:calc(var(--rx-u) * 9);min-height:calc(var(--rx-u) * 64);line-height:1.15}',
     '.rx-wrap{white-space:normal;max-width:calc(var(--rx-u) * 560);line-height:1.2}',
-    '.rx-menu-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;border-radius:6px;background:rgba(32,49,112,.85);cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;z-index:3;opacity:0;transition:opacity .15s ease}',
-    '.rx-root:hover .rx-menu-btn,.rx-root:focus-within .rx-menu-btn,.rx-menu-btn:focus-visible{opacity:1}',
-    '.rx-menu-btn span{display:block;width:14px;height:2px;background:#fff;border-radius:1px}',
     '.rx-menu{position:fixed;min-width:168px;background:rgba(255,255,255,.96);border:1px solid rgba(32,49,112,.35);border-radius:10px;padding:6px;opacity:0;transform:scale(.94) translateY(-4px);transform-origin:top right;transition:opacity .15s ease,transform .18s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:10000;box-shadow:0 6px 18px rgba(0,0,0,.18);color-scheme:light}',
     '.rx-menu.rx-menu-open{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}',
     '.rx-menu-item{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:8px 10px;border-radius:6px;font-size:13px;color:#203170;cursor:pointer;text-align:left}',
@@ -243,7 +238,6 @@
   var imgEl = null
   var bubbleEl = null
   var textEl = null
-  var menuBtn = null
   var contextMenu = null
   var toastEl = null
 
@@ -281,19 +275,6 @@
     textEl = document.createElement('div')
     textEl.className = 'rx-text'
     bubbleEl.appendChild(textEl)
-
-    menuBtn = document.createElement('button')
-    menuBtn.type = 'button'
-    menuBtn.className = 'rx-menu-btn'
-    menuBtn.title = '菜单'
-    menuBtn.setAttribute('aria-label', '打开菜单')
-    menuBtn.innerHTML = '<span></span><span></span><span></span>'
-    menuBtn.addEventListener('click', function (e) {
-      e.stopPropagation()
-      var r = bodyEl.getBoundingClientRect()
-      openContextMenu(r.right - 4, r.top + 30)
-    })
-    root.appendChild(menuBtn)
 
     document.body.appendChild(root)
 
@@ -1026,7 +1007,7 @@
     var p = state.prefs || FALLBACK.prefs
     var bh = state.behavior || FALLBACK.behavior
     return (
-      '<div class="rx-row"><label>大小</label><input type="range" class="rx-range" id="rx-scale-range" min="0.6" max="2.5" step="0.1" value="' + (Number(p.scale) || 1) + '"><input type="number" class="rx-number" id="rx-scale-num" min="1" max="20" value="' + (Math.round(((Number(p.scale) || 1) - 0.6) / 0.1) + 1) + '"></div>' +
+      '<div class="rx-row"><label>大小</label><input type="range" class="rx-range" id="rx-scale-range" min="0.6" max="2.5" step="0.1" value="' + (Number(p.scale) || 1) + '"><input type="number" class="rx-number" id="rx-scale-num" min="60" max="250" step="5" title="尺寸（百分比）" value="' + Math.round((Number(p.scale) || 1) * 100) + '"><span style="font-size:11px;color:#94a3b8">%</span></div>' +
       '<div class="rx-row"><label>位置</label><select class="rx-number" style="width:auto" id="rx-corner">' +
       '<option value="bottom-right"' + (p.corner === 'bottom-right' ? ' selected' : '') + '>右下</option>' +
       '<option value="bottom-left"' + (p.corner === 'bottom-left' ? ' selected' : '') + '>左下</option>' +
@@ -1091,17 +1072,32 @@
     } else {
       var range = body.querySelector('#rx-scale-range')
       var num = body.querySelector('#rx-scale-num')
-      range.addEventListener('input', function () {
-        root.style.setProperty('--rx-scale', range.value)
-        num.value = Math.round((Number(range.value) - 0.6) / 0.1) + 1
-        state.prefs.scale = Number(range.value)
-        applyScale(Number(range.value))
-      })
+      // 大小：百分比显示（60–250%），拖动即实时缩放并以所在角为锚点重排位置
+      var applyScaleFromControl = function (v) {
+        v = clamp(Number(v) || 1, 0.6, 2.5)
+        state.prefs.scale = v
+        range.value = String(v)
+        if (num) num.value = String(Math.round(v * 100))
+        applyScale(v)
+      }
+      range.addEventListener('input', function () { applyScaleFromControl(range.value) })
       num.addEventListener('change', function () {
-        var scale = clamp(0.6 + (Number(num.value) - 1) * 0.1, 0.6, 2.5)
-        range.value = String(scale)
-        state.prefs.scale = scale
-        applyScale(scale)
+        applyScaleFromControl(Math.round((Number(num.value) / 100) * 20) / 20)
+      })
+      // 表情动画 / 左吸附镜像 / 消耗表情反应：改动即生效（保存按钮负责落盘）
+      var animEl = body.querySelector('#rx-beh-anim')
+      if (animEl) animEl.addEventListener('change', function () {
+        state.prefs.animationOn = this.checked
+        applyBehaviorPrefs()
+      })
+      var mirrorEl = body.querySelector('#rx-beh-mirror')
+      if (mirrorEl) mirrorEl.addEventListener('change', function () {
+        state.prefs.mirrorOnLeft = this.checked
+        applyMirror()
+      })
+      var turnEl = body.querySelector('#rx-beh-turn')
+      if (turnEl) turnEl.addEventListener('change', function () {
+        state.prefs.turnCostOn = this.checked // 运行时按 prefs 判定（见消耗反应触发处），立即生效
       })
       body.querySelector('#rx-reset-pos').addEventListener('click', function () {
         place(state.prefs.corner || 'bottom-right')
