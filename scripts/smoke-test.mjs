@@ -165,7 +165,19 @@ check('last-turn seq=1', lj.ok === true && lj.seq === 1, lj)
 check('消耗金额≈3.75', Math.abs(lj.amount - 3.75) < 0.01, lj.amount)
 check('reaction=happy', lj.reaction === 'happy', lj.reaction)
 
-console.log('== tapIndex 注入 ==')
+console.log('== index 注入行（served 与 static 两种模式都靠这条） ==')
+const injCbs = listeners.get('webserver/index-inject') || []
+check('订阅了 webserver/index-inject', injCbs.length === 1, injCbs.length)
+const injTable = []
+for (const cb of injCbs) cb(injTable)
+check('push 了 script-src 行', injTable.length === 1 && injTable[0].kind === 'script-src' && injTable[0].src === '/dsh-pet-roxy/widget.js', injTable)
+check('placement=body', !!injTable[0] && injTable[0].placement === 'body', injTable[0])
+for (const cb of injCbs) cb(injTable)
+check('重复 emit 不重复 push（幂等）', injTable.length === 1, injTable.length)
+for (const cb of injCbs) cb(null)
+check('非数组入参不崩', injTable.length === 1)
+
+console.log('== tapIndex 注入（旧运行时兜底） ==')
 const html = tapFns[0]('<html><head></head><body><div>page</div></body></html>')
 check('注入 widget.js 且幂等', html.indexOf('/dsh-pet-roxy/widget.js') !== -1 && html.indexOf('/dsh-pet-roxy/widget.js') === html.lastIndexOf('/dsh-pet-roxy/widget.js'))
 const html2 = tapFns[0]('<html><body><script src="/dsh-pet-roxy/widget.js"></script></body></html>')
