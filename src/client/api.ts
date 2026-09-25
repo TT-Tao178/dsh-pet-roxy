@@ -172,8 +172,16 @@ export async function fetchConfig(): Promise<RoxyConfig> {
   return res.config
 }
 
-/** 写偏好；patch 里给 prefs 和/或 speech（宿主按字段深合并）。 */
-export async function putPrefs(patch: { prefs?: Partial<RoxyPrefs>; speech?: Partial<RoxySpeech> }): Promise<void> {
+/** PUT /prefs 接受的四段补丁（宿主对这四段分别做深合并）。 */
+export interface RoxyPrefsPatch {
+  prefs?: Partial<RoxyPrefs>
+  speech?: Partial<RoxySpeech>
+  behavior?: Partial<RoxyBehavior>
+  expressions?: Partial<RoxyExpressions>
+}
+
+/** 写偏好/台词/行为/表情映射；未给的段保持不动。 */
+export async function putPrefs(patch: RoxyPrefsPatch): Promise<void> {
   const res = await request<Envelope<never>>('/prefs', jsonInit('PUT', patch))
   if (res.ok !== true) throw new Error(res.error || 'prefs 写入失败')
 }
