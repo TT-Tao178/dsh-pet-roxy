@@ -14,15 +14,30 @@
   "main": "lib/index.js",
   "files": [
     "lib",
+    "src",
     "client",
     "assets",
     "cordis.patch.yml",
     "README.md"
   ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "license": "MIT"
 }
