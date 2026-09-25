@@ -18,6 +18,8 @@
 // ============================================================================
 (function () {
   if (window.__dshPetRoxy) return
+  // React 客户端半侧已接管时不再启动：两边都会挂载宠物，必须让位（否则出现两只洛琪希）
+  if (window.__dshPetRoxyReact) return
   window.__dshPetRoxy = true
 
   // -------------------------------------------------------------------------
@@ -240,6 +242,14 @@
   var textEl = null
   var contextMenu = null
   var toastEl = null
+
+  // 供 React 客户端半侧接管时调用：收走本 widget 建的 DOM。
+  // 只删节点、不停定时器 —— 那些定时器只会去写已被移除的元素，不会重建 DOM。
+  window.__dshPetRoxyTeardown = function () {
+    try { if (root && root.parentNode) root.parentNode.removeChild(root) } catch (e) { /* ignore */ }
+    try { if (contextMenu && contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu) } catch (e) { /* ignore */ }
+    try { if (toastEl && toastEl.parentNode) toastEl.parentNode.removeChild(toastEl) } catch (e) { /* ignore */ }
+  }
 
   function buildDom() {
     var styleEl = document.createElement('style')
