@@ -160,6 +160,44 @@ curl http://127.0.0.1:3080/dsh-pet-roxy/widget.js
 
 这些都放在本机，插件升级不会丢。
 
+## 架构
+
+插件是**双半侧**的，一行挂载声明同时起两边：
+
+| 半侧 | 入口 | 职责 |
+|---|---|---|
+| 宿主（Node） | `lib/index.js` | 余额拉取与记账、每轮消耗结算、任务 CRUD、表情图与配置下发，全部走 `/dsh-pet-roxy/*` 同源路由 |
+| 客户端（浏览器） | `src/client/*` → 构建产出 `lib/client.js` | 宠物本体、气泡台词、右键菜单、设置面板、数据统计 |
+
+客户端半侧走 DSH 官方的 client 插件契约：`package.json` 里声明 `dsh.client.platform = "web"`，
+并把 `exports["./client"]` 指向构建产物。DSH 启动时扫描已加载包里的该声明，把它作为
+`<script>` 行注入页面，产物执行时用 `window.__ModuleLoader__.load({ id, factory })` 注册自己。
+
+> 因此**宿主侧必须用包名挂载**（`name: 'dsh-pet-roxy'`），不能用 `file://` URL：声明扫描靠
+> `exactPackageSpecifier()` 从 loader 条目反推包名，带 scheme 的说明符会被它判成 undefined，
+> 于是 `dsh.client` 永远扫不到，React 半侧也就永远不会加载。
+
+老式的 `webserver/index-inject` 注入（`client/roxy-widget.js`）仍然保留并随包发布，作为
+「客户端半侧加载不出来时宠物也得在」的兜底；React 半侧一旦真正挂到 DOM 上，会立刻把它收走，
+所以页面上任何时候都只有一只洛琪希。
+
+## 开发
+
+改客户端半侧需要构建；宿主半侧是手写 ESM，不需要。
+
+````powershell
+npm install        # 只为构建：esbuild + react（运行时不依赖任何第三方包）
+npm run build      # 产出 lib/client.js
+npm test           # 冒烟测试（mock ctx，不连真实 DSH）
+````
+
+- 改 `src/client/*` → `npm run build` → **刷新页面**即可生效（产物由宿主路由在运行时下发）
+- 改 `lib/index.js`（宿主侧）→ 必须**重启 DSH**
+- `lib/client.js` 是构建产物且随仓库提交，clone 下来即可直接用，不必先装依赖
+
+想排查产物是否合规，用 `node scripts/build-client.mjs --no-minify` 打出可读版本 ——
+脚本会自检 `load(id)` 已注册、且 `factory` 返回的导出含 `inject` 与 `apply`。
+
 ## 常见问题
 
 **装完没出现？** 先看 `dsh --profile web --dump-config` 里有没有 `dsh-pet-roxy`；有的话重启 `dsh web` 再刷新浏览器。没有的话，多半是 `link:` 写成了带子目录的形式，卸载重装一次。
@@ -168,7 +206,11 @@ curl http://127.0.0.1:3080/dsh-pet-roxy/widget.js
 
 **上传的图没生效？** 图片要 ≤2MB，格式 PNG/JPG/WebP，透明背景效果最好。
 
-**改了代码不生效？** 本地 `link:` 安装时，宿主侧代码要重启 `dsh web`；页面侧的脚本刷新浏览器（F5）就行。
+**改了代码不生效？** 宿主侧（`lib/index.js`）必须重启 DSH；客户端半侧改完要先 `npm run build`，然后刷新页面（F5）即可。
+
+**右键宠物没反应，只有拖拽和点击能用？** 说明 React 客户端半侧没加载，页面退回了只带宠物本体的注入式兜底。在 Console 里查 `window.__dshPetRoxyReact` —— 不是 `true` 就依次检查 `package.json` 里的 `dsh.client`、`exports["./client"]`，以及宿主是不是用**包名**挂载的。
+
+**余额显示一串「余额接口返回异常」？** 早期版本对 `/user/balance` 的响应结构判断有误（要求了一个实际并不存在的 `code` 字段），导致余额永远拉不到；已在 0.3.0 修正，升级后重启 DSH 即可。
 
 ## 鸣谢
 
