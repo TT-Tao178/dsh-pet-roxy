@@ -12,7 +12,7 @@ import path from 'node:path'
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'roxy-smoke-'))
 process.env.DSH_HOME = tmpHome
 
-const { name, inject, apply } = await import('../lib/index.js')
+const { name, inject, apply, isPeakTime } = await import('../lib/index.js')
 
 let pass = 0
 let fail = 0
@@ -161,9 +161,13 @@ emit('turn/end', {})
 const l1 = await call('GET', '/dsh-pet-roxy/last-turn.json')
 const lj = l1.json()
 check('last-turn seq=1', lj.ok === true && lj.seq === 1, lj)
-// 谷价：输入 1.5/1e6 *1e6 = 1.5；输出 4.5/1e6*0.5e6 = 2.25；合计 3.75 → happy（0.01~5，新规则：≥5 才 surprised）
-check('消耗金额≈3.75', Math.abs(lj.amount - 3.75) < 0.01, lj.amount)
-check('reaction=happy', lj.reaction === 'happy', lj.reaction)
+// 定价随时段浮动，期望值必须按当前峰/谷价推算，否则测试会在峰时段
+// （北京时间 9-12、14-18，工作日）误报。
+// 谷价：输入 1*1.5 + 输出 0.5*4.5 = 3.75；峰价：输入 1*3.0 + 输出 0.5*9.0 = 7.5。
+const peak = isPeakTime(Math.floor(Date.now() / 1000))
+const expectCost = peak ? 7.5 : 3.75
+check('消耗金额符合当前峰/谷价', Math.abs(lj.amount - expectCost) < 0.01, { amount: lj.amount, expectCost, peak })
+check('reaction 与金额档位一致（≥5 元 surprised）', lj.reaction === (expectCost >= 5 ? 'surprised' : 'happy'), lj.reaction)
 
 console.log('== index 注入行（served 与 static 两种模式都靠这条） ==')
 const injCbs = listeners.get('webserver/index-inject') || []
