@@ -72,6 +72,46 @@ dsh plugin --profile web add link:.
 dsh plugin --profile web remove dsh-pet-roxy
 ```
 
+### 装在 DSH 桌面版（Electron，desktop profile）
+
+`dsh plugin --profile web add` 只会装到 **web** profile。Electron 桌面版启动的是 **desktop**
+profile，两个 profile 有各自独立的依赖和配置树——所以在桌面版里刷新页面，永远看不到她。
+
+桌面版用仓库自带的脚本挂载，**零安装**：
+
+````powershell
+# 先预览要改什么（不改任何文件）
+powershell -ExecutionPolicy Bypass -File scripts\install-desktop-profile.ps1 -WhatIf
+
+# 正式写入（自动备份目标文件）
+powershell -ExecutionPolicy Bypass -File scripts\install-desktop-profile.ps1
+
+# 卸载，恢复到写入前
+powershell -ExecutionPolicy Bypass -File scripts\install-desktop-profile.ps1 -Uninstall
+````
+
+脚本只做一件事：往 `<DSH_HOME>\profiles\desktop\cordis.patch.yml` 追加一条
+
+```yaml
+- insert:
+    - id: pet-roxy
+      name: 'file:///D:/Workspace-1/code/dsh-pet-roxy/lib/index.js'
+```
+
+用 `file://` URL 直接指向包入口，所以**不跑 pnpm、不产生 `node_modules`**。这点很关键：
+`profiles\node_modules` 里可能已经有一份 hoisted 的旧版 `@deepseek-ai/*`，一旦 desktop profile
+出现本地 `node_modules`，旧版就会顶掉 harness 内置的版本，可能连启动都出问题。
+
+装完**必须完全退出并重启 DSH**（Electron 桌面版刷新页面无效）。
+
+```powershell
+# 验证：端口换成你自己的 DSH 地址，应返回 200
+curl http://127.0.0.1:19387/dsh-pet-roxy/widget.js
+```
+
+> 已经用 `link:` 装进 web profile 的可以两套并存，互不影响。想同时改多个 profile 时，
+> 脚本支持 `-Profile <名字>`。
+
 ### 装好后还需要配一个密钥
 
 - **`DEEPSEEK_API_KEY`**（必需）：拉余额用的，在 DSH 的凭据设置里配置。
