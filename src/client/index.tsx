@@ -53,9 +53,17 @@ function RoxyApp() {
   useEffect(() => {
     let alive = true
     fetchConfig()
-      .then((cfg) => { if (alive) setConfig(cfg) })
+      .then((cfg) => {
+        if (!alive) return
+        // 配置到手 = 宿主路由确实可用，此刻才接管注入式 widget。
+        // 反过来说：拿不到配置就让旧 widget 继续顶着，绝不出现「一只都不剩」。
+        const w = window as HostWindow
+        w.__dshPetRoxyReact = true
+        takeoverFromInjectedWidget()
+        setConfig(cfg)
+      })
       .catch((err: unknown) => {
-        console.warn('[dsh-pet-roxy] 读取配置失败，React 宠物不挂载：', err)
+        console.warn('[dsh-pet-roxy] 读取配置失败，继续由注入式 widget 兜底：', err)
       })
     return () => { alive = false }
   }, [])
@@ -98,9 +106,6 @@ function takeoverFromInjectedWidget(): void {
 export function apply(_ctx: unknown): void {
   const w = window as HostWindow
   if (mounted !== null) return // 重复 apply 保持单实例
-
-  w.__dshPetRoxyReact = true
-  takeoverFromInjectedWidget()
 
   const container = document.createElement('div')
   container.setAttribute(ROOT_ATTR, '')
