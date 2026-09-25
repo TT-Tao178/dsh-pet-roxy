@@ -27,6 +27,8 @@ export interface PetProps {
   behavior: RoxyBehavior
   /** 拖拽吸附后把新位置写回宿主（宿主负责持久化）。 */
   onPersistPlacement: (placement: { corner: string; marginX: number; marginY: number }) => void
+  /** 首次真正落到 DOM 之后回调一次，供入口决定何时收走注入式 widget。 */
+  onRendered?: () => void
 }
 
 type Corner = string
@@ -90,7 +92,7 @@ function snapPlacement(x: number, y: number, box: Box, vp: Viewport) {
   return { corner, marginX, marginY }
 }
 
-export function Pet({ expressions, prefs, behavior, onPersistPlacement }: PetProps) {
+export function Pet({ expressions, prefs, behavior, onPersistPlacement, onRendered }: PetProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const [expr, setExpr] = useState<ExprKey>('default')
@@ -107,6 +109,14 @@ export function Pet({ expressions, prefs, behavior, onPersistPlacement }: PetPro
   const [dragPos, setDragPos] = useState<{ left: number; top: number } | null>(null)
   const dragRef = useRef<{ id: number; startX: number; startY: number; originLeft: number; originTop: number; moved: boolean } | null>(null)
   const dragging = dragPos !== null
+
+  // 首帧落地后报一次：此刻 .rx-root 已在 DOM 里，入口才敢收走注入式 widget。
+  const renderedRef = useRef(false)
+  useEffect(() => {
+    if (renderedRef.current) return
+    renderedRef.current = true
+    onRendered?.()
+  })
 
   // ---- 尺寸与视口测量：--rx-base 由 CSS clamp 算，JS 只负责量出来 ----
   useEffect(() => {

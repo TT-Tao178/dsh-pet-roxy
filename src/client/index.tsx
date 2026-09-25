@@ -14,7 +14,7 @@
  * 作为「client 半侧没加载成功时宠物也要出现」的兜底。两边同时存在时由这里接管：
  * 调旧 widget 暴露的 teardown 收走它建好的 DOM，避免出现两只洛琪希。
  */
-import { createElement, useEffect, useState } from 'react'
+import { createElement, useCallback, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { fetchConfig, putPrefs, type RoxyConfig } from './api'
 import { Pet } from './Pet'
@@ -53,19 +53,19 @@ function RoxyApp() {
   useEffect(() => {
     let alive = true
     fetchConfig()
-      .then((cfg) => {
-        if (!alive) return
-        // 配置到手 = 宿主路由确实可用，此刻才接管注入式 widget。
-        // 反过来说：拿不到配置就让旧 widget 继续顶着，绝不出现「一只都不剩」。
-        const w = window as HostWindow
-        w.__dshPetRoxyReact = true
-        takeoverFromInjectedWidget()
-        setConfig(cfg)
-      })
+      .then((cfg) => { if (alive) setConfig(cfg) })
       .catch((err: unknown) => {
         console.warn('[dsh-pet-roxy] 读取配置失败，继续由注入式 widget 兜底：', err)
       })
     return () => { alive = false }
+  }, [])
+
+  // 只有等 Pet 真的画到 DOM 上，才认领「React 版已接管」并收走注入式 widget。
+  // 反过来的顺序（配置到手就拆）会在 Pet 渲染抛错时让新旧都不剩。
+  const handleRendered = useCallback(() => {
+    const w = window as HostWindow
+    w.__dshPetRoxyReact = true
+    takeoverFromInjectedWidget()
   }, [])
 
   if (config === null) return null
@@ -79,6 +79,7 @@ function RoxyApp() {
         console.warn('[dsh-pet-roxy] 位置持久化失败：', err)
       })
     },
+    onRendered: handleRendered,
   })
 }
 
