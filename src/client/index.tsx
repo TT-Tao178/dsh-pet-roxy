@@ -71,9 +71,7 @@ function RoxyApp() {
   if (config === null) return null
 
   return createElement(Pet, {
-    expressions: config.expressions,
-    prefs: config.prefs,
-    behavior: config.behavior,
+    config,
     onPersistPlacement: (placement) => {
       putPrefs({ prefs: placement }).catch((err: unknown) => {
         console.warn('[dsh-pet-roxy] 位置持久化失败：', err)

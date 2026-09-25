@@ -117,15 +117,21 @@ export interface RoxyTurn {
 
 export interface RoxyBalance {
   ok: boolean
+  /** 失败时的错误码：NO_KEY / NETWORK / API。 */
   code?: string
   error?: string
+  /** 成功时：余额与币种。 */
+  totalBalance?: number | null
   currency?: string
-  total?: number
-  /** 记账模式下的今日已用（宿主算好）。 */
+  updatedAt?: number
+  /** 今日已用（记账或令牌模式，由宿主算好）。 */
   todayUsage?: number
-  /** 令牌模式下的今日已用。 */
-  todayTokens?: number
-  [key: string]: unknown
+  isPeak?: boolean
+  usageMode?: 'ledger' | 'token'
+  /** 失败时：网络抖动，可重试。 */
+  transient?: boolean
+  /** 失败时：返回的是上一次的缓存值。 */
+  stale?: boolean
 }
 
 /** 宿主 JSON 接口的统一响应外衣（多数路由返回它）。 */

@@ -9,8 +9,10 @@
  * 拖拽松手时把落点吸附成最近的四边/四角，因此窗口大小变化后位置依然正确。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ExprKey, RoxyBehavior, RoxyExpressions, RoxyPrefs } from './api'
-import { imageUrl } from './api'
+import type { ExprKey, RoxyConfig } from './api'
+import { fetchBalance, imageUrl } from './api'
+import { Bubble, type BubbleContent } from './Bubble'
+import { pickLine } from './speech'
 
 /** 单击与拖拽的分界（位移平方 < 25，即 < 5px）。 */
 const CLICK_SQ = 25
@@ -22,9 +24,8 @@ const DOUBLE_CLICK_MS = 320
 const SNAP_RATIO = 1 / 3
 
 export interface PetProps {
-  expressions: RoxyExpressions
-  prefs: RoxyPrefs
-  behavior: RoxyBehavior
+  /** 完整配置：表情、偏好、行为参数与台词组都要用。 */
+  config: RoxyConfig
   /** 拖拽吸附后把新位置写回宿主（宿主负责持久化）。 */
   onPersistPlacement: (placement: { corner: string; marginX: number; marginY: number }) => void
   /** 首次真正落到 DOM 之后回调一次，供入口决定何时收走注入式 widget。 */
@@ -92,7 +93,8 @@ function snapPlacement(x: number, y: number, box: Box, vp: Viewport) {
   return { corner, marginX, marginY }
 }
 
-export function Pet({ expressions, prefs, behavior, onPersistPlacement, onRendered }: PetProps) {
+export function Pet({ config, onPersistPlacement, onRendered }: PetProps) {
+  const { expressions, prefs, behavior } = config
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const [expr, setExpr] = useState<ExprKey>('default')
@@ -268,7 +270,54 @@ export function Pet({ expressions, prefs, behavior, onPersistPlacement, onRender
       return
     }
     lastClickRef.current = now
-  }, [onDoubleClick])
+    // 首次点击给余额，气泡已开着就轮换台词（对齐 README 描述的交互）
+    if (bubbleOpenRef.current) {
+      showBubble({ kind: 'line', text: pickLine(config) ?? '……' })
+    } else {
+      void showBalance()
+    }
+  }, [config, onDoubleClick, showBalance, showBubble])
+
+  // ---- 气泡 ----
+  const [bubble, setBubble] = useState<BubbleContent | null>(null)
+  const bubbleOpenRef = useRef(false)
+  const bubbleTimerRef = useRef(0)
+
+  const showBubble = useCallback((content: BubbleContent) => {
+    setBubble(content)
+    bubbleOpenRef.current = true
+    if (bubbleTimerRef.current !== 0) window.clearTimeout(bubbleTimerRef.current)
+    bubbleTimerRef.current = window.setTimeout(() => {
+      setBubble(null)
+      bubbleOpenRef.current = false
+      bubbleTimerRef.current = 0
+    }, behavior.bubbleMs)
+  }, [behavior.bubbleMs])
+
+  useEffect(() => () => {
+    if (bubbleTimerRef.current !== 0) window.clearTimeout(bubbleTimerRef.current)
+  }, [])
+
+  /** 首次点击的去处：拿余额。失败就把原因（截断后）当台词吐出来。 */
+  const showBalance = useCallback(async () => {
+    try {
+      const b = await fetchBalance()
+      if (b.ok === true) {
+        showBubble({
+          kind: 'balance',
+          currency: b.currency,
+          total: b.totalBalance ?? null,
+          todayUsage: b.todayUsage,
+          stale: b.stale,
+          isPeak: b.isPeak,
+        })
+        return
+      }
+      showBubble({ kind: 'line', text: String(b.error || '余额拿不到。').slice(0, 60) })
+    } catch {
+      showBubble({ kind: 'line', text: '余额拿不到。' })
+    }
+  }, [showBubble])
 
   const mirrored = prefs.mirrorOnLeft && corner.includes('left')
 
@@ -307,6 +356,7 @@ export function Pet({ expressions, prefs, behavior, onPersistPlacement, onRender
           alt="洛琪希"
           draggable={false}
         />
+        <Bubble open={bubble !== null} content={bubble} />
       </div>
     </div>
   )
