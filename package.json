@@ -35,10 +35,11 @@
   },
   "scripts": {
     "build": "node scripts/build-client.mjs",
-    "test": "node scripts/smoke-test.mjs"
+    "test": "node scripts/smoke-test.mjs && node scripts/client-smoke.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
+    "jsdom": "^30.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

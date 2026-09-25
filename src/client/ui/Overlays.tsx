@@ -49,7 +49,11 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
-      if (ref.current !== null && e.target instanceof Node && ref.current.contains(e.target)) return
+      const el = ref.current
+      // 刻意不写 `e.target instanceof Node`：Node 属于页面全局，在非浏览器宿主
+      // （client-smoke 的 jsdom 环境）里并不存在，会直接抛 ReferenceError。
+      // contains() 对非节点参数返回 false，语义已经够用。
+      if (el !== null && e.target !== null && el.contains(e.target as globalThis.Node)) return
       onClose()
     }
     const onKey = (e: KeyboardEvent) => {

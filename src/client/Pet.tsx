@@ -261,30 +261,9 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
     }
   }, [box, viewport, onPersistPlacement])
 
-  // 双击：犯困（行为四）
-  const lastClickRef = useRef(0)
-  const onDoubleClick = useCallback(() => {
-    setExpr('angry')
-    window.setTimeout(() => setExpr('default'), behavior.sleepyMs)
-  }, [behavior.sleepyMs])
-
-  const onBodyClick = useCallback(() => {
-    const now = Date.now()
-    if (now - lastClickRef.current < DOUBLE_CLICK_MS) {
-      lastClickRef.current = 0
-      onDoubleClick()
-      return
-    }
-    lastClickRef.current = now
-    // 首次点击给余额，气泡已开着就轮换台词（对齐 README 描述的交互）
-    if (bubbleOpenRef.current) {
-      showBubble({ kind: 'line', text: pickLine(config) ?? '……' })
-    } else {
-      void showBalance()
-    }
-  }, [config, onDoubleClick, showBalance, showBubble])
-
   // ---- 气泡 ----
+  // 注意：这一块必须声明在 onBodyClick 之前 —— 后者引用 showBubble/showBalance，
+  // const 声明在引用之后会直接抛 TDZ（曾经真崩过，靠 client-smoke 才逮到）。
   const [bubble, setBubble] = useState<BubbleContent | null>(null)
   const bubbleOpenRef = useRef(false)
   const bubbleTimerRef = useRef(0)
@@ -324,6 +303,29 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
       showBubble({ kind: 'line', text: '余额拿不到。' })
     }
   }, [showBubble])
+
+  // 双击：犯困（行为四）
+  const lastClickRef = useRef(0)
+  const onDoubleClick = useCallback(() => {
+    setExpr('angry')
+    window.setTimeout(() => setExpr('default'), behavior.sleepyMs)
+  }, [behavior.sleepyMs])
+
+  const onBodyClick = useCallback(() => {
+    const now = Date.now()
+    if (now - lastClickRef.current < DOUBLE_CLICK_MS) {
+      lastClickRef.current = 0
+      onDoubleClick()
+      return
+    }
+    lastClickRef.current = now
+    // 首次点击给余额，气泡已开着就轮换台词（对齐 README 描述的交互）
+    if (bubbleOpenRef.current) {
+      showBubble({ kind: 'line', text: pickLine(config) ?? '……' })
+    } else {
+      void showBalance()
+    }
+  }, [config, onDoubleClick, showBalance, showBubble])
 
   // ---- 覆盖层状态：菜单 / 便签 / 对话框 / toast ----
   const [toastText, setToastText] = useState<string | null>(null)

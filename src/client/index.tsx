@@ -105,7 +105,12 @@ function takeoverFromInjectedWidget(): void {
   } catch (err) {
     console.warn('[dsh-pet-roxy] 调用旧 widget teardown 失败（忽略）：', err)
   }
-  for (const stale of Array.from(document.querySelectorAll('.rx-root'))) stale.remove()
+  // 只清理注入式 widget 建的节点：React 自己那只 .rx-root 此刻已经落在 DOM 里了，
+  // 无差别删除会把刚渲染出来的宠物一起删掉（client-smoke 逮到过这一条）。
+  for (const stale of Array.from(document.querySelectorAll('.rx-root'))) {
+    if (mounted !== null && mounted.container.contains(stale)) continue
+    stale.remove()
+  }
 }
 
 /**
