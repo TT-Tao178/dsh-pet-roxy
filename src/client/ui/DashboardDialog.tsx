@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RoxyTask, RoxyTasksPayload } from '../api'
 import { createTask, deleteTask, fetchTasks, updateTask } from '../api'
+import { syncDialogOpen } from './dialog'
 
 const STATUS_META: Record<RoxyTask['status'], { label: string; color: string; mark: string }> = {
   todo: { label: '待办', color: '#94a3b8', mark: '○' },
@@ -81,10 +82,7 @@ export function DashboardDialog({ open, pollMs, onClose, onToast }: DashboardDia
   const [draft, setDraft] = useState('')
 
   useEffect(() => {
-    const el = ref.current
-    if (el === null) return
-    if (open && !el.open) el.showModal()
-    if (!open && el.open) el.close()
+    syncDialogOpen(ref.current, open)
   }, [open])
 
   // 打开期间轮询；关闭即停，避免后台空转

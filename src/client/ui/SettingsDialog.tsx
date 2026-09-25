@@ -8,8 +8,9 @@
  * 本来就是为它写的，Esc 关闭与焦点陷阱也免费拿到。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ExprKey, RoxyConfig } from '../api'
+import type { ExprKey, RoxyConfig, RoxyPrefs, RoxyPrefsPatch } from '../api'
 import { EXPR_KEYS, EXPR_LABELS, deleteUserImage, imageUrl, putPrefs, uploadUserImage } from '../api'
+import { syncDialogOpen } from './dialog'
 
 /** 支持的吸附位置（与 Pet 的 snapPlacement 产出的 corner 命名一致）。 */
 const CORNERS: Array<{ value: string; label: string }> = [
@@ -29,6 +30,11 @@ export interface SettingsDialogProps {
   onClose: () => void
   /** 保存成功后刷新配置（让宠物立刻用上新值）。 */
   onReload: () => void
+  /**
+   * 拖动滑块/切换开关时的即时预览：只改内存里的 config，不落盘。
+   * 旧实现的行为是「拖动即生效」，React 版必须显式做这一步，否则要等保存才变化。
+   */
+  onPreviewPrefs: (patch: Partial<RoxyPrefs>) => void
   onToast: (text: string) => void
 }
 
@@ -48,8 +54,12 @@ function readBase64(file: File): Promise<string> {
   })
 }
 
-export function SettingsDialog({ open, config, onClose, onReload, onToast }: SettingsDialogProps) {
+export function SettingsDialog({ open, config, onClose, onReload, onPreviewPrefs, onToast }: SettingsDialogProps) {
   const ref = useRef<HTMLDialogElement | null>(null)
+  // 只在「刚打开」那一刻读配置。预览会改 config，若让下面那个 effect 依赖 config，
+  // 拖动滑块时草稿会被反复重置，预览立刻被打回原值。
+  const configRef = useRef(config)
+  configRef.current = config
   const [tab, setTab] = useState<Tab>('speech')
   const [busy, setBusy] = useState(false)
 
@@ -67,28 +77,56 @@ export function SettingsDialog({ open, config, onClose, onReload, onToast }: Set
   const [turnCostOn, setTurnCostOn] = useState(true)
   const [sleepyChance, setSleepyChance] = useState(0.3)
 
-  // 每次打开都把草稿重置为当前配置
+  // 只在「刚打开」时把草稿重置为当前配置（刻意不依赖 config，理由见 configRef 注释）
   useEffect(() => {
     if (!open) return
-    const custom = config.speech?.customLines ?? []
+    const c = configRef.current
+    const custom = c.speech?.customLines ?? []
     setCustomLines(custom.flatMap((g) => (Array.isArray(g.items) ? g.items : [])).join('\n'))
-    setToggleRandom(config.speech?.toggles?.randomLines !== false)
-    setToggleTurnCost(config.speech?.toggles?.turnCost !== false)
-    setToggleBalanceLow(config.speech?.toggles?.balanceLow !== false)
-    setScale(Number(config.prefs.scale) || 1)
-    setCorner(String(config.prefs.corner || 'bottom-right'))
-    setAnimationOn(config.prefs.animationOn !== false)
-    setMirrorOnLeft(config.prefs.mirrorOnLeft === true)
-    setTurnCostOn(config.prefs.turnCostOn !== false)
-    setSleepyChance(Number(config.behavior.sleepyChance) || 0.3)
-  }, [open, config])
+    setToggleRandom(c.speech?.toggles?.randomLines !== false)
+    setToggleTurnCost(c.speech?.toggles?.turnCost !== false)
+    setToggleBalanceLow(c.speech?.toggles?.balanceLow !== false)
+    setScale(Number(c.prefs.scale) || 1)
+    setCorner(String(c.prefs.corner || 'bottom-right'))
+    setAnimationOn(c.prefs.animationOn !== false)
+    setMirrorOnLeft(c.prefs.mirrorOnLeft === true)
+    setTurnCostOn(c.prefs.turnCostOn !== false)
+    setSleepyChance(Number(c.behavior.sleepyChance) || 0.3)
+  }, [open])
 
   useEffect(() => {
-    const el = ref.current
-    if (el === null) return
-    if (open && !el.open) el.showModal()
-    if (!open && el.open) el.close()
+    syncDialogOpen(ref.current, open)
   }, [open])
+
+  // ---- 拖动即生效：先预览（只改内存），再防抖落盘 ----
+  const pendingRef = useRef<RoxyPrefsPatch>({})
+  const debounceRef = useRef(0)
+
+  const queuePersist = useCallback((patch: RoxyPrefsPatch) => {
+    pendingRef.current = {
+      prefs: { ...(pendingRef.current.prefs || {}), ...(patch.prefs || {}) },
+      behavior: { ...(pendingRef.current.behavior || {}), ...(patch.behavior || {}) },
+    }
+    if (debounceRef.current !== 0) window.clearTimeout(debounceRef.current)
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = 0
+      const body = pendingRef.current
+      pendingRef.current = {}
+      void putPrefs(body)
+        .then(() => { onReload() })
+        .catch((err: unknown) => { onToast('保存失败：' + String((err as Error)?.message || err).slice(0, 40)) })
+    }, 400)
+  }, [onReload, onToast])
+
+  /** 改一项偏好：内存预览 + 防抖落盘（草稿由调用方 set）。 */
+  const applyPref = useCallback(<K extends keyof RoxyPrefs>(key: K, value: RoxyPrefs[K]) => {
+    onPreviewPrefs({ [key]: value } as Partial<RoxyPrefs>)
+    queuePersist({ prefs: { [key]: value } as Partial<RoxyPrefs> })
+  }, [onPreviewPrefs, queuePersist])
+
+  useEffect(() => () => {
+    if (debounceRef.current !== 0) window.clearTimeout(debounceRef.current)
+  }, [])
 
   const saveSpeech = useCallback(async () => {
     setBusy(true)
@@ -251,13 +289,22 @@ export function SettingsDialog({ open, config, onClose, onReload, onToast }: Set
               <input
                 type="range" className="rx-range" min="0.6" max="2.5" step="0.05"
                 value={scale}
-                onChange={(e) => setScale(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setScale(v)
+                  applyPref('scale', v) // 拖动即生效（旧实现的行为）
+                }}
               />
               <span>{Math.round(scale * 100)}%</span>
             </div>
             <div className="rx-row">
               <label>吸附位置</label>
-              <select className="rx-number" style={{ width: '96px' }} value={corner} onChange={(e) => setCorner(e.target.value)}>
+              <select
+                className="rx-number"
+                style={{ width: '96px' }}
+                value={corner}
+                onChange={(e) => { setCorner(e.target.value); applyPref('corner', e.target.value) }}
+              >
                 {CORNERS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
@@ -266,25 +313,42 @@ export function SettingsDialog({ open, config, onClose, onReload, onToast }: Set
               <input
                 type="range" className="rx-range" min="0" max="1" step="0.05"
                 value={sleepyChance}
-                onChange={(e) => setSleepyChance(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setSleepyChance(v)
+                  // 犯困概率属于 behavior 段（宿主对四段分别深合并），且不影响外观预览
+                  queuePersist({ behavior: { sleepyChance: v } })
+                }}
               />
               <span>{Math.round(sleepyChance * 100)}%</span>
             </div>
             <div className="rx-row">
               <label className="rx-check-label">
-                <input type="checkbox" className="rx-check" checked={animationOn} onChange={(e) => setAnimationOn(e.target.checked)} />
+                <input
+                  type="checkbox" className="rx-check" checked={animationOn}
+                  onChange={(e) => { setAnimationOn(e.target.checked); applyPref('animationOn', e.target.checked) }}
+                />
                 {' '}呼吸动画
               </label>
               <label className="rx-check-label">
-                <input type="checkbox" className="rx-check" checked={mirrorOnLeft} onChange={(e) => setMirrorOnLeft(e.target.checked)} />
+                <input
+                  type="checkbox" className="rx-check" checked={mirrorOnLeft}
+                  onChange={(e) => { setMirrorOnLeft(e.target.checked); applyPref('mirrorOnLeft', e.target.checked) }}
+                />
                 {' '}左吸附镜像
               </label>
               <label className="rx-check-label">
-                <input type="checkbox" className="rx-check" checked={turnCostOn} onChange={(e) => setTurnCostOn(e.target.checked)} />
+                <input
+                  type="checkbox" className="rx-check" checked={turnCostOn}
+                  onChange={(e) => { setTurnCostOn(e.target.checked); applyPref('turnCostOn', e.target.checked) }}
+                />
                 {' '}消耗表情反应
               </label>
             </div>
             <div className="rx-sep" />
+            <div className="rx-row" style={{ color: '#94a3b8', fontSize: '11px' }}>
+              上面这些改完立即生效，并会在停手后自动保存。
+            </div>
             <button type="button" className="rx-btn rx-btn-primary" disabled={busy} onClick={() => { void saveBehavior() }}>保存</button>
           </>
         )}

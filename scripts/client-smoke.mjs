@@ -156,7 +156,26 @@ body.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancela
 await wait(80)
 
 check('右键后菜单打开', window.document.querySelector('.rx-menu-open') !== null)
-check('菜单 4 项', window.document.querySelectorAll('.rx-menu-item').length === 4, window.document.querySelectorAll('.rx-menu-item').length)
+check('菜单 5 项', window.document.querySelectorAll('.rx-menu-item').length === 5, window.document.querySelectorAll('.rx-menu-item').length)
+
+// 点「💰 查余额」→ 余额面板应带 force=1 强制刷新（绕过宿主 25 秒缓存）
+const balanceItem = Array.from(window.document.querySelectorAll('.rx-menu-item'))
+  .find((el) => String(el.textContent || '').includes('查余额'))
+check('菜单里有查余额项', balanceItem !== undefined)
+if (balanceItem !== undefined) {
+  calls.length = 0
+  balanceItem.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  await wait(200)
+  check('余额面板强制刷新（?force=1）', calls.some((c) => c.url.includes('force=1')), calls.map((c) => c.url))
+  check('余额面板已打开', window.document.querySelector('dialog[open]') !== null)
+  const dialog = window.document.querySelector('dialog[open]')
+  if (dialog !== null) {
+    check('面板显示余额 45.43', String(dialog.textContent || '').includes('45.43'), String(dialog.textContent || '').slice(0, 80))
+    // jsdom 的 dialog 没有 close()，摘掉 open 属性即可（只为让后续断言干净）
+    dialog.removeAttribute('open')
+    await wait(80)
+  }
+}
 
 // 关闭菜单（点别处）
 window.document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))

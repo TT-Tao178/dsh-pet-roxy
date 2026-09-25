@@ -66,11 +66,18 @@ export function renderReport(template: string, title: string): string {
   return String(template || '').replace(/%title%/g, String(title || ''))
 }
 
-/** 金额格式化：CNY（或缺省）用 ¥ 前缀，其他币种跟在后面。 */
+/**
+ * 金额格式化：CNY（或缺省）用 ¥ 前缀，其他币种跟在后面。
+ *
+ * 小于 1 分钱的数额保留 4 位小数 —— 单轮对话常常只花几厘，按「分」显示会被抹成
+ * ¥0.00，那本身就是「金额看着不准」的一个来源。
+ */
 export function formatMoney(value: number | null | undefined, currency: string | undefined): string {
   const n = Number(value)
   if (!Number.isFinite(n)) return '--'
   const cur = String(currency || 'CNY')
-  if (cur === 'CNY') return '¥' + n.toFixed(2)
-  return n.toFixed(2) + ' ' + cur
+  const abs = Math.abs(n)
+  const digits = abs > 0 && abs < 0.01 ? 4 : 2
+  const text = n.toFixed(digits)
+  return cur === 'CNY' ? '¥' + text : text + ' ' + cur
 }

@@ -9,12 +9,13 @@
  * 拖拽松手时把落点吸附成最近的四边/四角，因此窗口大小变化后位置依然正确。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ExprKey, RoxyBalance, RoxyConfig, RoxyTurn } from './api'
+import type { ExprKey, RoxyBalance, RoxyConfig, RoxyPrefs, RoxyTurn } from './api'
 import { createTask, fetchBalance, imageUrl } from './api'
 import { Bubble, type BubbleContent } from './Bubble'
 import { useTurnWatch } from './hooks'
 import { pickLine, renderReport } from './speech'
 import { ContextMenu, NoteInput, Toast, type MenuItem } from './ui/Overlays'
+import { BalanceDialog } from './ui/BalanceDialog'
 import { DashboardDialog } from './ui/DashboardDialog'
 import { SettingsDialog } from './ui/SettingsDialog'
 
@@ -34,6 +35,8 @@ export interface PetProps {
   onPersistPlacement: (placement: { corner: string; marginX: number; marginY: number }) => void
   /** 设置面板保存后重新拉配置，让改动立刻生效。 */
   onReloadConfig: () => void
+  /** 设置面板拖动滑块时的即时预览（只改内存 config）。 */
+  onPreviewPrefs: (patch: Partial<RoxyPrefs>) => void
   /** 首次真正落到 DOM 之后回调一次，供入口决定何时收走注入式 widget。 */
   onRendered?: () => void
 }
@@ -99,7 +102,7 @@ function snapPlacement(x: number, y: number, box: Box, vp: Viewport) {
   return { corner, marginX, marginY }
 }
 
-export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: PetProps) {
+export function Pet({ config, onPersistPlacement, onReloadConfig, onPreviewPrefs, onRendered }: PetProps) {
   const { expressions, prefs, behavior } = config
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -286,7 +289,8 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
   /** 首次点击的去处：拿余额。失败就把原因（截断后）当台词吐出来。 */
   const showBalance = useCallback(async () => {
     try {
-      const b = await fetchBalance()
+      // force：点击时要的是「此刻」的余额，绕过宿主的 25 秒缓存
+      const b = await fetchBalance(true)
       if (b.ok === true) {
         showBubble({
           kind: 'balance',
@@ -332,7 +336,7 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
   const toastTimerRef = useRef(0)
   const [menu, setMenu] = useState({ open: false, x: 0, y: 0 })
   const [note, setNote] = useState({ open: false, x: 0, y: 0 })
-  const [dialog, setDialog] = useState<'settings' | 'dashboard' | null>(null)
+  const [dialog, setDialog] = useState<'settings' | 'dashboard' | 'balance' | null>(null)
 
   const showToast = useCallback((text: string) => {
     setToastText(text)
@@ -367,6 +371,7 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
 
   const menuItems: MenuItem[] = useMemo(() => [
     { label: '💬 说话', onSelect: speakNow },
+    { label: '💰 查余额', onSelect: () => setDialog('balance') },
     { label: '📊 数据统计', onSelect: () => setDialog('dashboard') },
     { label: '➕ 添加任务', onSelect: () => setNote({ open: true, x: menu.x, y: menu.y }) },
     { label: '⚙️ 设置', onSelect: () => setDialog('settings') },
@@ -467,6 +472,12 @@ export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: 
         config={config}
         onClose={() => setDialog(null)}
         onReload={onReloadConfig}
+        onPreviewPrefs={onPreviewPrefs}
+        onToast={showToast}
+      />
+      <BalanceDialog
+        open={dialog === 'balance'}
+        onClose={() => setDialog(null)}
         onToast={showToast}
       />
       <DashboardDialog

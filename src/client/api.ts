@@ -210,8 +210,12 @@ export async function deleteTask(id: string): Promise<void> {
   if (res.ok !== true) throw new Error(res.error || '任务删除失败')
 }
 
-export async function fetchBalance(): Promise<RoxyBalance> {
-  return await request<RoxyBalance>('/balance.json')
+/**
+ * 拉取余额。
+ * @param force - true 时带 ?force=1 绕过宿主的 25 秒缓存，拿「此刻」的值。
+ */
+export async function fetchBalance(force = false): Promise<RoxyBalance> {
+  return await request<RoxyBalance>('/balance.json' + (force ? '?force=1' : ''))
 }
 
 export async function fetchLastTurn(): Promise<RoxyTurn> {

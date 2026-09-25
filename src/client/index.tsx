@@ -16,7 +16,7 @@
  */
 import { createElement, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { fetchConfig, putPrefs, type RoxyConfig } from './api'
+import { fetchConfig, putPrefs, type RoxyConfig, type RoxyPrefs } from './api'
 import { Pet } from './Pet'
 import { injectPetStyles } from './styles'
 
@@ -51,6 +51,14 @@ function RoxyApp() {
   const [config, setConfig] = useState<RoxyConfig | null>(null)
   const aliveRef = useRef(true)
 
+  /**
+   * 设置面板拖动滑块时的即时预览：只改内存里的 config，不落盘。
+   * 面板自己会在停手后防抖写回宿主，所以这里不必碰网络。
+   */
+  const previewPrefs = useCallback((patch: Partial<RoxyPrefs>) => {
+    setConfig((prev) => (prev === null ? prev : { ...prev, prefs: { ...prev.prefs, ...patch } }))
+  }, [])
+
   /** 设置面板保存后重新拉配置，让改动立刻生效。 */
   const reload = useCallback(() => {
     fetchConfig()
@@ -83,6 +91,7 @@ function RoxyApp() {
   return createElement(Pet, {
     config,
     onReloadConfig: reload,
+    onPreviewPrefs: previewPrefs,
     onPersistPlacement: (placement) => {
       putPrefs({ prefs: placement }).catch((err: unknown) => {
         console.warn('[dsh-pet-roxy] 位置持久化失败：', err)
