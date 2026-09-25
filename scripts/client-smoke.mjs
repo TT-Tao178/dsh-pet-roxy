@@ -61,7 +61,7 @@ const FAKE_CONFIG = {
   prefs: { scale: 1, corner: 'bottom-right', marginX: 16, marginY: 16, mirrorOnLeft: false, animationOn: true, linesOn: true, turnCostOn: true, turnCostCloseMs: 5000 },
   behavior: { breatheMs: 2400, flickEverySec: [10, 20], flickChance: 0.2, flickMs: 1200, sleepyEverySec: [25, 35], sleepyChance: 0.3, sleepyMs: 5000, refreshMs: 60000, bubbleMs: 5000, taskPollMs: 1000 },
   speech: { toggles: { randomLines: true, turnCost: true, balanceLow: true }, customLines: [] },
-  lines: [{ group: 'kuudere', weight: 1, items: ['……', '嗯。'] }],
+  lines: [{ group: 'kuudere', weight: 1, items: ['这是一条特意写得很长的台词，用来验证气泡会按字数自动缩小字号，而不是让文字溢出气泡、或者挤成一团把手绘形状撑坏'] }],
   reportLines: { taskAdded: '记下了：%title%。' },
 }
 
@@ -192,6 +192,19 @@ await wait(200)
 
 check('点击后气泡打开', window.document.querySelector('.rx-bubble-open') !== null)
 check('气泡里出现余额', String(window.document.querySelector('.rx-bubble')?.textContent || '').includes('45.43'), window.document.querySelector('.rx-bubble')?.textContent)
+
+// 再点一次 → 轮换成台词（必须等过双击窗口，否则会被当成双击犯困）
+await wait(400)
+body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 120, clientY: 120 }))
+window.dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: 120, clientY: 120 }))
+body.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+await wait(200)
+
+const wrap = window.document.querySelector('.rx-wrap')
+const wrapStyle = wrap === null ? null : String(wrap.getAttribute('style') || '')
+check('再点一次会切成台词', wrap !== null && String(wrap.textContent || '').includes('这是一条特意写得'))
+// 长台词的 --rx-fit 必须 < 1：漏掉这个系数，台词就按固定字号渲染，与手绘气泡对不上
+check('长台词自动缩字号（--rx-fit < 1）', wrapStyle !== null && /--rx-fit:\s*0\./.test(wrapStyle), wrapStyle)
 
 // ---------------------------------------------------------------------------
 // 卸载

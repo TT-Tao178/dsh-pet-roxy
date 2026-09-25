@@ -57,8 +57,7 @@ export function BalanceDialog({ open, onClose, onToast }: BalanceDialogProps) {
   return (
     <dialog
       ref={ref}
-      className="rx-dialog"
-      style={{ height: 'auto', maxHeight: '86vh' }}
+      className="rx-dialog rx-dialog-compact"
       onClose={onClose}
       onCancel={(e) => { e.preventDefault(); onClose() }}
     >
@@ -70,52 +69,41 @@ export function BalanceDialog({ open, onClose, onToast }: BalanceDialogProps) {
       <div className="rx-panel">
         {ok ? (
           <>
-            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>当前余额</span>
-              <span style={{ fontSize: '28px', fontWeight: 800 }}>
-                {formatMoney(balance.totalBalance ?? null, balance.currency)}
-              </span>
+            <div className="rx-balance-hero">
+              <b>{formatMoney(balance.totalBalance ?? null, balance.currency)}</b>
+              <span>账户余额 · {timeText(updatedAt)} 更新{balance.stale === true ? '（缓存值）' : ''}</span>
             </div>
-            <div className="rx-sep" />
-            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>今日已用</span>
-              <span style={{ fontWeight: 700 }}>{formatMoney(balance.todayUsage ?? 0, balance.currency)}</span>
+            <div className="rx-kv">
+              <span>今日已用</span>
+              <b>{formatMoney(balance.todayUsage ?? 0, balance.currency)}</b>
             </div>
-            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>当前时段</span>
+            <div className="rx-kv">
+              <span>当前时段</span>
               <span>{balance.isPeak === true ? '峰时（单价高）' : '谷时（单价低）'}</span>
             </div>
-            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>用量口径</span>
-              <span>{balance.usageMode === 'token' ? '令牌模式（精确）' : '记账模式（余额差值）'}</span>
-            </div>
-            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>更新时间</span>
-              <span>{timeText(updatedAt)}{balance.stale === true ? '（缓存值）' : ''}</span>
+            <div className="rx-kv">
+              <span>用量口径</span>
+              <span>{balance.usageMode === 'token' ? '令牌模式' : '记账模式'}</span>
             </div>
           </>
         ) : (
           <>
-            <div className="rx-row" style={{ color: '#ef4444' }}>
-              {balance === null ? '正在查询…' : String(balance.error || '拿不到余额。')}
+            <div className="rx-kv" style={{ color: '#ef4444' }}>
+              <span>{balance === null ? '正在查询…' : String(balance.error || '拿不到余额。')}</span>
             </div>
             {balance !== null && balance.code === 'NO_KEY' && (
-              <div className="rx-row" style={{ color: '#94a3b8' }}>
-                在 DSH 的凭据设置里配置 DEEPSEEK_API_KEY 之后才能查询余额。
+              <div className="rx-kv">
+                <span>在 DSH 凭据里配置 DEEPSEEK_API_KEY 后才能查询。</span>
               </div>
             )}
           </>
         )}
 
-        <div className="rx-sep" />
-        <div className="rx-row" style={{ justifyContent: 'flex-end', gap: '8px' }}>
+        <div className="rx-dialog-actions">
           <button type="button" className="rx-btn" disabled={loading} onClick={() => { void refresh() }}>
             {loading ? '刷新中…' : '立即刷新'}
           </button>
           <button type="button" className="rx-btn rx-btn-primary" onClick={onClose}>关闭</button>
-        </div>
-        <div className="rx-row" style={{ color: '#94a3b8', fontSize: '11px' }}>
-          面板打开时会绕过宿主的 25 秒缓存直接查询；不打开时余额仍按 60 秒节奏在后台刷新。
         </div>
       </div>
     </dialog>

@@ -27,7 +27,11 @@ export const PET_CSS = [
   '.rx-amount{font-size:calc(var(--rx-u) * 128);font-weight:800;line-height:1.05}',
   '.rx-period{font-size:calc(var(--rx-u) * 104);font-weight:800;line-height:1.05}',
   '.rx-hint{font-size:calc(var(--rx-u) * 56);color:#9fb0d9;letter-spacing:.02em;margin-top:calc(var(--rx-u) * 9);min-height:calc(var(--rx-u) * 64);line-height:1.15}',
-  '.rx-wrap{white-space:normal;max-width:calc(var(--rx-u) * 560);line-height:1.2}',
+  // 台词字号必须跟着气泡单位缩放：--rx-u = 气泡宽度 / 1026，是气泡内的「度量单位」。
+  // 早先这条漏了 font-size，台词就一直是浏览器默认的 16px，而气泡随宠物缩放，
+  // 于是文字和手绘气泡对不上，长台词还会撑出气泡。
+  // --rx-fit 由组件按台词长度给出（长句自动缩小），行数上限 5 行防止溢出。
+  '.rx-wrap{white-space:normal;max-width:calc(var(--rx-u) * 560);line-height:1.25;font-size:calc(var(--rx-u) * 62 * var(--rx-fit,1));display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;word-break:break-word}',
   '.rx-menu{position:fixed;min-width:168px;background:rgba(255,255,255,.96);border:1px solid rgba(32,49,112,.35);border-radius:10px;padding:6px;opacity:0;transform:scale(.94) translateY(-4px);transform-origin:top right;transition:opacity .15s ease,transform .18s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:10000;box-shadow:0 6px 18px rgba(0,0,0,.18);color-scheme:light}',
   '.rx-menu.rx-menu-open{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}',
   '.rx-menu-item{display:flex;align-items:center;gap:8px;width:100%;border:none;background:transparent;padding:8px 10px;border-radius:6px;font-size:13px;color:#203170;cursor:pointer;text-align:left}',
@@ -93,6 +97,19 @@ export const PET_CSS = [
   '.rx-note-actions button{border:none;background:rgba(32,49,112,.08);border-radius:6px;padding:5px 12px;font-size:12px;color:#203170;cursor:pointer}',
   '.rx-note-actions button:hover{background:rgba(32,49,112,.16)}',
   '.rx-note-add{background:#203170 !important;color:#fff !important}',
+
+  // 紧凑型对话框：给「查余额」这类只有几行数据的面板用。
+  // 默认 .rx-dialog 是 480×560 的固定框，装五行字会留一大片空白。
+  '.rx-dialog-compact{width:min(340px,92vw);height:auto;max-height:86vh}',
+  '.rx-dialog-compact .rx-panel{padding:14px 16px}',
+  '.rx-balance-hero{padding:2px 0 12px;text-align:center}',
+  '.rx-balance-hero b{display:block;font-size:34px;font-weight:800;line-height:1.15;color:#203170}',
+  '.rx-balance-hero span{font-size:12px;color:#94a3b8}',
+  '.rx-kv{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;font-size:13px;color:#203170}',
+  '.rx-kv span:first-child{color:#64748b}',
+  '.rx-kv b{font-weight:700;}',
+  '.rx-dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:12px}',
+
   '@media (max-width:560px){.rx-stats-grid{grid-template-columns:repeat(2,1fr)}.rx-slot-grid{grid-template-columns:repeat(3,1fr)}}',
 ].join('\n')
 

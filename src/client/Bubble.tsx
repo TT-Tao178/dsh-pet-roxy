@@ -21,10 +21,33 @@ export interface BubbleProps {
   content: BubbleContent | null
 }
 
+/**
+ * 长台词自动缩字号。
+ *
+ * 气泡是固定形状的手绘椭圆，字多了要么溢出、要么挤成一团。这里按字数给一个缩放
+ * 系数，交给 CSS 的 --rx-fit 去乘基准字号；再配合 .rx-wrap 的 5 行上限，台词再长
+ * 也待在气泡里。
+ */
+function fitScale(text: string): number {
+  const n = String(text || '').length
+  if (n <= 10) return 1
+  if (n <= 18) return 0.88
+  if (n <= 28) return 0.76
+  if (n <= 42) return 0.66
+  return 0.58
+}
+
 function renderContent(content: BubbleContent) {
   switch (content.kind) {
     case 'line':
-      return <div className="rx-wrap">{content.text}</div>
+      return (
+        <div
+          className="rx-wrap"
+          style={{ '--rx-fit': String(fitScale(content.text)) } as React.CSSProperties}
+        >
+          {content.text}
+        </div>
+      )
 
     case 'balance': {
       const hint: string[] = []
