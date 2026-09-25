@@ -77,7 +77,7 @@ dsh plugin --profile web remove dsh-pet-roxy
 `dsh plugin --profile web add` 只会装到 **web** profile。Electron 桌面版启动的是 **desktop**
 profile，两个 profile 有各自独立的依赖和配置树——所以在桌面版里刷新页面，永远看不到她。
 
-桌面版用仓库自带的脚本挂载，**零安装**：
+桌面版用仓库自带的脚本挂载：
 
 ````powershell
 # 先预览要改什么（不改任何文件）
@@ -90,23 +90,39 @@ powershell -ExecutionPolicy Bypass -File scripts\install-desktop-profile.ps1
 powershell -ExecutionPolicy Bypass -File scripts\install-desktop-profile.ps1 -Uninstall
 ````
 
-脚本只做一件事：往 `<DSH_HOME>\profiles\desktop\cordis.patch.yml` 追加一条
+脚本默认走 **Package 模式**，做两件事：
+
+1. 在 `<DSH_HOME>\profiles\desktop\node_modules\` 下建一个**目录联接（junction）**指向本仓库；
+2. 往 `<DSH_HOME>\profiles\desktop\cordis.patch.yml` 追加一条包名条目。
 
 ```yaml
 - insert:
     - id: pet-roxy
-      name: 'file:///D:/Workspace-1/code/dsh-pet-roxy/lib/index.js'
+      name: 'dsh-pet-roxy'
 ```
 
-用 `file://` URL 直接指向包入口，所以**不跑 pnpm、不产生 `node_modules`**。这点很关键：
-`profiles\node_modules` 里可能已经有一份 hoisted 的旧版 `@deepseek-ai/*`，一旦 desktop profile
-出现本地 `node_modules`，旧版就会顶掉 harness 内置的版本，可能连启动都出问题。
+**为什么必须是包名而不是 `file://` URL**：harness 靠 loader 条目的 name 反推包名
+（`exactPackageSpecifier()`），再读那个包的 `package.json` 去找 `dsh.client` 声明。
+`file://` 这种带 scheme 的说明符会让它返回 `undefined`——于是 `dsh.client` 永远扫不到，
+React 客户端半侧也就永远不会加载。**Package 模式是客户端半侧能工作的前提。**
+
+整个过程**不跑 pnpm**：建 junction 是纯文件系统操作，不触发依赖解析，所以
+`profiles\node_modules` 里可能存在的 hoisted 旧版 `@deepseek-ai/*` 不会被拉进本 profile
+的解析路径（也就不会顶掉 harness 内置的版本）。
+
+实在想退回零 `node_modules` 的旧方式，用 `-Mode File`——但那样只剩
+`webserver/index-inject` 注入式，客户端半侧不加载。
+
+两种模式都会保留注入式作为**显示兜底**：即使客户端半侧加载失败，宠物依然会出现。
 
 装完**必须完全退出并重启 DSH**（Electron 桌面版刷新页面无效）。
 
 ```powershell
-# 验证：端口换成你自己的 DSH 地址，应返回 200
+# 验证一：端口换成你自己的 DSH 地址，应返回 200
 curl http://127.0.0.1:19387/dsh-pet-roxy/widget.js
+
+# 验证二：在窗口里按 Ctrl+Shift+I，Console 里应返回 true（表示 React 客户端半侧也加载了）
+window.__dshPetRoxyClient
 ```
 
 > 已经用 `link:` 装进 web profile 的可以两套并存，互不影响。想同时改多个 profile 时，
