@@ -169,6 +169,20 @@ const expectCost = peak ? 7.5 : 3.75
 check('消耗金额符合当前峰/谷价', Math.abs(lj.amount - expectCost) < 0.01, { amount: lj.amount, expectCost, peak })
 check('reaction 与金额档位一致（≥5 元 surprised）', lj.reaction === (expectCost >= 5 ? 'surprised' : 'happy'), lj.reaction)
 
+console.log('== 每轮消耗（含缓存命中，钉住不重复计价） ==')
+// inputTokens 是聚合 prompt tokens（含 cache），cacheReadTokens 是其中命中缓存的部分。
+// 旧实现用 (input × miss 价) + (cache × hit 价)，把缓存段按 miss 价又算了一遍 ——
+// miss 价是 hit 价的 30 倍，金额会明显偏高。这里把正确口径固定住。
+emit('assistant/message', { turn: 2, usage: { inputTokens: 1000000, cacheReadTokens: 800000, outputTokens: 0, reasoningTokens: 0 }, message: { source: { model: 'deepseek-v4-flash' } } })
+emit('turn/end', {})
+const l2 = await call('GET', '/dsh-pet-roxy/last-turn.json')
+const lj2 = l2.json()
+// 谷价：命中 0.8M × 0.05 = 0.04；未命中 0.2M × 1.5 = 0.30 → 0.34
+// 峰价：命中 0.8M × 0.10 = 0.08；未命中 0.2M × 3.0 = 0.60 → 0.68
+const expectCost2 = peak ? 0.68 : 0.34
+check('缓存命中不重复计价', Math.abs(lj2.amount - expectCost2) < 0.001, { amount: lj2.amount, expectCost2, peak })
+check('tokens 不重复累加 cache', lj2.tokens === 1000000, lj2.tokens)
+
 console.log('== index 注入行（served 与 static 两种模式都靠这条） ==')
 const injCbs = listeners.get('webserver/index-inject') || []
 check('订阅了 webserver/index-inject', injCbs.length === 1, injCbs.length)
