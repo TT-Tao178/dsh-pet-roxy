@@ -14,7 +14,7 @@
  * 作为「client 半侧没加载成功时宠物也要出现」的兜底。两边同时存在时由这里接管：
  * 调旧 widget 暴露的 teardown 收走它建好的 DOM，避免出现两只洛琪希。
  */
-import { createElement, useCallback, useEffect, useState } from 'react'
+import { createElement, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { fetchConfig, putPrefs, type RoxyConfig } from './api'
 import { Pet } from './Pet'
@@ -49,15 +49,25 @@ let mounted: Mounted | null = null
  */
 function RoxyApp() {
   const [config, setConfig] = useState<RoxyConfig | null>(null)
+  const aliveRef = useRef(true)
+
+  /** 设置面板保存后重新拉配置，让改动立刻生效。 */
+  const reload = useCallback(() => {
+    fetchConfig()
+      .then((cfg) => { if (aliveRef.current) setConfig(cfg) })
+      .catch((err: unknown) => {
+        console.warn('[dsh-pet-roxy] 重新读取配置失败：', err)
+      })
+  }, [])
 
   useEffect(() => {
-    let alive = true
+    aliveRef.current = true
     fetchConfig()
-      .then((cfg) => { if (alive) setConfig(cfg) })
+      .then((cfg) => { if (aliveRef.current) setConfig(cfg) })
       .catch((err: unknown) => {
         console.warn('[dsh-pet-roxy] 读取配置失败，继续由注入式 widget 兜底：', err)
       })
-    return () => { alive = false }
+    return () => { aliveRef.current = false }
   }, [])
 
   // 只有等 Pet 真的画到 DOM 上，才认领「React 版已接管」并收走注入式 widget。
@@ -72,6 +82,7 @@ function RoxyApp() {
 
   return createElement(Pet, {
     config,
+    onReloadConfig: reload,
     onPersistPlacement: (placement) => {
       putPrefs({ prefs: placement }).catch((err: unknown) => {
         console.warn('[dsh-pet-roxy] 位置持久化失败：', err)

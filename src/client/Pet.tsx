@@ -9,10 +9,14 @@
  * 拖拽松手时把落点吸附成最近的四边/四角，因此窗口大小变化后位置依然正确。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ExprKey, RoxyConfig } from './api'
-import { fetchBalance, imageUrl } from './api'
+import type { ExprKey, RoxyBalance, RoxyConfig, RoxyTurn } from './api'
+import { createTask, fetchBalance, imageUrl } from './api'
 import { Bubble, type BubbleContent } from './Bubble'
-import { pickLine } from './speech'
+import { useTurnWatch } from './hooks'
+import { pickLine, renderReport } from './speech'
+import { ContextMenu, NoteInput, Toast, type MenuItem } from './ui/Overlays'
+import { DashboardDialog } from './ui/DashboardDialog'
+import { SettingsDialog } from './ui/SettingsDialog'
 
 /** 单击与拖拽的分界（位移平方 < 25，即 < 5px）。 */
 const CLICK_SQ = 25
@@ -28,6 +32,8 @@ export interface PetProps {
   config: RoxyConfig
   /** 拖拽吸附后把新位置写回宿主（宿主负责持久化）。 */
   onPersistPlacement: (placement: { corner: string; marginX: number; marginY: number }) => void
+  /** 设置面板保存后重新拉配置，让改动立刻生效。 */
+  onReloadConfig: () => void
   /** 首次真正落到 DOM 之后回调一次，供入口决定何时收走注入式 widget。 */
   onRendered?: () => void
 }
@@ -93,7 +99,7 @@ function snapPlacement(x: number, y: number, box: Box, vp: Viewport) {
   return { corner, marginX, marginY }
 }
 
-export function Pet({ config, onPersistPlacement, onRendered }: PetProps) {
+export function Pet({ config, onPersistPlacement, onReloadConfig, onRendered }: PetProps) {
   const { expressions, prefs, behavior } = config
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -319,6 +325,82 @@ export function Pet({ config, onPersistPlacement, onRendered }: PetProps) {
     }
   }, [showBubble])
 
+  // ---- 覆盖层状态：菜单 / 便签 / 对话框 / toast ----
+  const [toastText, setToastText] = useState<string | null>(null)
+  const toastTimerRef = useRef(0)
+  const [menu, setMenu] = useState({ open: false, x: 0, y: 0 })
+  const [note, setNote] = useState({ open: false, x: 0, y: 0 })
+  const [dialog, setDialog] = useState<'settings' | 'dashboard' | null>(null)
+
+  const showToast = useCallback((text: string) => {
+    setToastText(text)
+    if (toastTimerRef.current !== 0) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastText(null)
+      toastTimerRef.current = 0
+    }, 1800)
+  }, [])
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== 0) window.clearTimeout(toastTimerRef.current)
+  }, [])
+
+  const speakNow = useCallback(() => {
+    if (prefs.linesOn === false) return
+    showBubble({ kind: 'line', text: pickLine(config) ?? '……' })
+  }, [config, prefs.linesOn, showBubble])
+
+  const submitTask = useCallback((title: string) => {
+    setNote({ open: false, x: 0, y: 0 })
+    void createTask(title)
+      .then(() => { showToast(renderReport(config.reportLines?.taskAdded || '记下了：%title%。', title)) })
+      .catch((err: unknown) => { showToast('添加失败：' + String((err as Error)?.message || err).slice(0, 40)) })
+  }, [config.reportLines, showToast])
+
+  const onPetContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ open: true, x: e.clientX, y: e.clientY })
+  }, [])
+
+  const menuItems: MenuItem[] = useMemo(() => [
+    { label: '💬 说话', onSelect: speakNow },
+    { label: '📊 数据统计', onSelect: () => setDialog('dashboard') },
+    { label: '➕ 添加任务', onSelect: () => setNote({ open: true, x: menu.x, y: menu.y }) },
+    { label: '⚙️ 设置', onSelect: () => setDialog('settings') },
+  ], [speakNow, menu.x, menu.y])
+
+  // ---- 每轮消耗结算 + 余额刷新（宿主无推送通道，靠轮询） ----
+  const onTurn = useCallback((turn: RoxyTurn) => {
+    setExpr(turn.reaction || 'default')
+    window.setTimeout(() => setExpr('default'), 4000)
+    if (typeof turn.amount === 'number') {
+      showBubble({ kind: 'turn', amount: turn.amount, tokens: turn.tokens })
+    }
+  }, [showBubble])
+
+  // 低余额只提醒一次，直到余额回升才重新武装 —— 否则每轮刷新都会再弹一次
+  const lowWarnedRef = useRef(false)
+  const onBalance = useCallback((balance: RoxyBalance) => {
+    const low = config.reactions?.balanceLow
+    if (!low || typeof low.threshold !== 'number') return
+    if (typeof balance.totalBalance !== 'number') return
+    if (balance.totalBalance < low.threshold) {
+      if (lowWarnedRef.current || prefs.linesOn === false) return
+      lowWarnedRef.current = true
+      showBubble({ kind: 'line', text: low.line || '余额不多了。自己看着办。' })
+    } else {
+      lowWarnedRef.current = false
+    }
+  }, [config.reactions, prefs.linesOn, showBubble])
+
+  useTurnWatch({
+    turnCostOn: prefs.turnCostOn !== false,
+    refreshMs: behavior.refreshMs,
+    onTurn,
+    onBalance,
+  })
+
   const mirrored = prefs.mirrorOnLeft && corner.includes('left')
 
   const rootClass = [
@@ -336,28 +418,61 @@ export function Pet({ config, onPersistPlacement, onRendered }: PetProps) {
   } as React.CSSProperties
 
   return (
-    <div
-      ref={rootRef}
-      className={rootClass}
-      style={rootStyle}
-      role="img"
-      aria-label="洛琪希宠物挂件"
-      data-dsh-pet-roxy=""
-    >
+    <>
       <div
-        className="rx-body"
-        onPointerDown={onPointerDown}
-        onClick={onBodyClick}
-        onDoubleClick={onDoubleClick}
+        ref={rootRef}
+        className={rootClass}
+        style={rootStyle}
+        role="img"
+        aria-label="洛琪希宠物挂件"
+        data-dsh-pet-roxy=""
       >
-        <img
-          className="rx-img"
-          src={imageUrl(expressions[expr])}
-          alt="洛琪希"
-          draggable={false}
-        />
-        <Bubble open={bubble !== null} content={bubble} />
+        <div
+          className="rx-body"
+          onPointerDown={onPointerDown}
+          onClick={onBodyClick}
+          onDoubleClick={onDoubleClick}
+          onContextMenu={onPetContextMenu}
+        >
+          <img
+            className="rx-img"
+            src={imageUrl(expressions[expr])}
+            alt="洛琪希"
+            draggable={false}
+          />
+          <Bubble open={bubble !== null} content={bubble} />
+        </div>
       </div>
-    </div>
+
+      {/* 浮层必须待在 .rx-root 之外：镜像时 root 带 scaleX(-1)，挂进去会被翻转 */}
+      <ContextMenu
+        open={menu.open}
+        x={menu.x}
+        y={menu.y}
+        items={menuItems}
+        onClose={() => setMenu((m) => ({ ...m, open: false }))}
+      />
+      <NoteInput
+        open={note.open}
+        x={note.x}
+        y={note.y}
+        onSubmit={submitTask}
+        onCancel={() => setNote({ open: false, x: 0, y: 0 })}
+      />
+      <Toast text={toastText} />
+      <SettingsDialog
+        open={dialog === 'settings'}
+        config={config}
+        onClose={() => setDialog(null)}
+        onReload={onReloadConfig}
+        onToast={showToast}
+      />
+      <DashboardDialog
+        open={dialog === 'dashboard'}
+        pollMs={behavior.taskPollMs}
+        onClose={() => setDialog(null)}
+        onToast={showToast}
+      />
+    </>
   )
 }
